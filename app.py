@@ -102,8 +102,8 @@ def fetch_sku_map(token):
                 break
             for p in products:
                 # Try every plausible SKU field
-                sku = (str(p.get("external_id") or p.get("sku") or
-                           p.get("domain_key") or p.get("id") or "")).strip()
+                sku = (str(p.get("external_product_id") or p.get("external_id") or
+                           p.get("sku") or p.get("domain_key") or p.get("id") or "")).strip()
                 name = (p.get("name") or p.get("title") or "").strip()
                 if sku and name:
                     sku_map[sku] = name
