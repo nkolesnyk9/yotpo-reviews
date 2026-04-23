@@ -76,9 +76,42 @@ def fetch_all_reviews(token, days_back=395):
     return reviews
 
 
+def fetch_sku_map(token):
+    """Fetch all products and return a dict of {sku: product_name}."""
+    sku_map = {}
+    page = 1
+    while True:
+        try:
+            r = requests.get(
+                f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/products",
+                params={"utoken": token, "count": 100, "page": page},
+                timeout=30
+            )
+            r.raise_for_status()
+            products = r.json().get("products", [])
+            if not products:
+                break
+            for p in products:
+                sku = p.get("external_id") or p.get("sku") or ""
+                name = p.get("name") or p.get("title") or ""
+                if sku and name:
+                    sku_map[str(sku)] = name
+            if len(products) < 100:
+                break
+            page += 1
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"Error fetching products page {page}: {e}")
+            break
+    print(f"Loaded {len(sku_map)} products from Yotpo")
+    return sku_map
+
+
 # ── Data Processing ───────────────────────────────────────────────────────────
 
-def process_reviews(reviews):
+def process_reviews(reviews, sku_map=None):
+    if sku_map is None:
+        sku_map = {}
     now       = datetime.utcnow()
     ytd_start = datetime(now.year, 1, 1)
     monthly   = defaultdict(lambda: {"count":0,"scores":[],"pos":0,"neg":0,"neut":0})
@@ -91,8 +124,8 @@ def process_reviews(reviews):
         except Exception:
             continue
         score     = int(r.get("score", 0))
-        product   = (r.get("product_title") or r.get("product", {}).get("name") or
-                     r.get("product", {}).get("title") or "Unknown")
+        sku       = str(r.get("sku") or r.get("product_id") or "")
+        product   = sku_map.get(sku) or r.get("product_title") or (f"SKU {sku}" if sku else "Unknown")
         sentiment = float(r.get("sentiment", 0) or 0)
         row = {
             "score": score, "product": product,
@@ -179,7 +212,8 @@ def refresh_data():
     try:
         token   = get_yotpo_token()
         reviews = fetch_all_reviews(token)
-        data    = process_reviews(reviews)
+        sku_map = fetch_sku_map(token)
+        data    = process_reviews(reviews, sku_map)
         with _lock:
             _cache["data"]         = data
             _cache["refreshed_at"] = datetime.utcnow()
