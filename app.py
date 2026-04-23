@@ -313,6 +313,11 @@ def api_refresh():
     success = refresh_data()
     return jsonify({"ok": success})
 
+@app.route("/api/send-email", methods=["POST"])
+def api_send_email():
+    send_monthly_email()
+    return jsonify({"ok": True})
+
 
 # ── Boot ──────────────────────────────────────────────────────────────────────
 
