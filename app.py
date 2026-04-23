@@ -88,14 +88,25 @@ def fetch_sku_map(token):
                 timeout=30
             )
             r.raise_for_status()
-            products = r.json().get("products", [])
+            body = r.json()
+            # Log first page so we can see the structure
+            if page == 1:
+                print(f"Products API response keys: {list(body.keys())}")
+                sample = (body.get("products") or body.get("response", {}).get("products") or [])
+                if sample:
+                    print(f"Sample product keys: {list(sample[0].keys())}")
+
+            products = (body.get("products") or
+                        body.get("response", {}).get("products") or [])
             if not products:
                 break
             for p in products:
-                sku = p.get("external_id") or p.get("sku") or ""
-                name = p.get("name") or p.get("title") or ""
+                # Try every plausible SKU field
+                sku = (str(p.get("external_id") or p.get("sku") or
+                           p.get("domain_key") or p.get("id") or "")).strip()
+                name = (p.get("name") or p.get("title") or "").strip()
                 if sku and name:
-                    sku_map[str(sku)] = name
+                    sku_map[sku] = name
             if len(products) < 100:
                 break
             page += 1
@@ -103,7 +114,7 @@ def fetch_sku_map(token):
         except Exception as e:
             print(f"Error fetching products page {page}: {e}")
             break
-    print(f"Loaded {len(sku_map)} products from Yotpo")
+    print(f"Loaded {len(sku_map)} products from Yotpo. Keys sample: {list(sku_map.items())[:5]}")
     return sku_map
 
 
@@ -365,6 +376,37 @@ def api_debug_review():
         r.raise_for_status()
         reviews = r.json().get("reviews", [])
         return jsonify(reviews[0] if reviews else {})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/api/debug-products")
+def api_debug_products():
+    try:
+        token = get_yotpo_token()
+        results = {}
+        # Try endpoint 1 — v1 products
+        r1 = requests.get(
+            f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/products",
+            params={"utoken": token, "count": 3, "page": 1},
+            timeout=30
+        )
+        results["v1_products_status"] = r1.status_code
+        results["v1_products"] = r1.text[:500]
+
+        # Try endpoint 2 — product by SKU
+        r2 = requests.get(
+            f"https://api.yotpo.com/v1/widget/{YOTPO_APP_KEY}/products/3018/reviews.json",
+            timeout=30
+        )
+        results["widget_sku_status"] = r2.status_code
+        try:
+            body2 = r2.json()
+            prods = body2.get("response", {}).get("products", [])
+            results["widget_product"] = prods[0] if prods else body2
+        except Exception:
+            results["widget_sku_raw"] = r2.text[:300]
+
+        return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)})
 
