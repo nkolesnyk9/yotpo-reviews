@@ -91,7 +91,8 @@ def process_reviews(reviews):
         except Exception:
             continue
         score     = int(r.get("score", 0))
-        product   = r.get("product_title", "Unknown")
+        product   = (r.get("product_title") or r.get("product", {}).get("name") or
+                     r.get("product", {}).get("title") or "Unknown")
         sentiment = float(r.get("sentiment", 0) or 0)
         row = {
             "score": score, "product": product,
@@ -317,6 +318,21 @@ def api_refresh():
 def api_send_email():
     send_monthly_email()
     return jsonify({"ok": True})
+
+@app.route("/api/debug-review")
+def api_debug_review():
+    try:
+        token = get_yotpo_token()
+        r = requests.get(
+            f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/reviews",
+            params={"utoken": token, "count": 1, "page": 1},
+            timeout=30
+        )
+        r.raise_for_status()
+        reviews = r.json().get("reviews", [])
+        return jsonify(reviews[0] if reviews else {})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 # ── Boot ──────────────────────────────────────────────────────────────────────
