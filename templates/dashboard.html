@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WSP Review Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #f7f6f2;
+    --surface:  #ffffff;
+    --border:   #e4e2db;
+    --text:     #1a1a2e;
+    --muted:    #888780;
+    --green:    #1D9E75;
+    --blue:     #378ADD;
+    --red:      #E24B4A;
+    --amber:    #E49B0F;
+    --green-bg: #eaf7f1;
+    --blue-bg:  #e6f1fb;
+    --red-bg:   #fcebeb;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    background: var(--text);
+    padding: 20px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .site-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    color: #fff;
+    font-weight: 400;
+    letter-spacing: -0.3px;
+  }
+  .site-header .meta {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+  }
+  .refresh-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.7);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .refresh-btn:hover { background: rgba(255,255,255,0.18); }
+  .refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* ── Tabs ── */
+  .tabs-wrap {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .tab {
+    padding: 14px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); }
+
+  /* ── Layout ── */
+  .main { padding: 28px 40px; max-width: 1200px; margin: 0 auto; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ── KPI grid ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .kpi.k-dark::before  { background: var(--text); }
+  .kpi.k-green::before { background: var(--green); }
+  .kpi.k-blue::before  { background: var(--blue); }
+  .kpi.k-red::before   { background: var(--red); }
+  .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .kpi-value { font-family: 'DM Serif Display', serif; font-size: 32px; line-height: 1; color: var(--text); }
+  .kpi-value.green { color: var(--green); }
+  .kpi-value.blue  { color: var(--blue); }
+  .kpi-value.red   { color: var(--red); }
+  .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* ── Chart cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .grid-3 { display: grid; grid-template-columns: 1.15fr 0.95fr 0.9fr; gap: 14px; margin-bottom: 14px; }
+
+  /* ── Bar rows ── */
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .bar-row:last-child { margin-bottom: 0; }
+  .bar-name { font-size: 12px; color: var(--text); width: 180px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-name.narrow { width: 32px; color: var(--muted); }
+  .bar-track { flex: 1; background: #f0ede6; border-radius: 3px; height: 7px; overflow: hidden; }
+  .bar-fill { height: 7px; border-radius: 3px; transition: width 0.6s ease; }
+  .bar-fill.blue  { background: var(--blue); }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.red   { background: var(--red); }
+  .bar-fill.amber { background: var(--amber); }
+  .bar-count { font-size: 12px; color: var(--muted); width: 36px; text-align: right; flex-shrink: 0; }
+  .bar-avg   { font-size: 11px; color: var(--green); width: 34px; text-align: right; flex-shrink: 0; }
+
+  /* ── Sentiment bar ── */
+  .sent-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Status rows ── */
+  .status-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-label { color: var(--muted); }
+  .status-val   { font-weight: 500; }
+
+  /* ── Low reviews ── */
+  .low-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .low-row:last-child { border-bottom: none; }
+  .low-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; }
+  .low-name { font-size: 13px; font-weight: 500; }
+  .low-date { font-size: 11px; color: var(--muted); }
+  .low-badge {
+    font-size: 11px; padding: 2px 8px;
+    background: #f0ede6; color: var(--muted);
+    border-radius: 4px;
+  }
+  .low-content { font-size: 13px; color: #555; line-height: 1.5; }
+  .stars-red  { color: var(--red); font-size: 13px; letter-spacing: 1px; }
+  .stars-gray { color: #d8d5ce; font-size: 13px; letter-spacing: 1px; }
+
+  /* ── Info banner ── */
+  .info-banner {
+    background: #f0ede6; border: 1px solid var(--border);
+    border-radius: 7px; padding: 10px 14px;
+    font-size: 12px; color: var(--muted);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 300px; color: var(--muted); font-size: 14px;
+    gap: 10px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .main { padding: 16px; }
+    .site-header { padding: 14px 16px; }
+    .tabs-wrap { padding: 0 16px; overflow-x: auto; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .bar-name { width: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <h1>Review Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:14px">
+    <span class="meta" id="refreshedAt">Loading…</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="tabs-wrap">
+  <div class="tab active" onclick="switchTab('ytd',this)">Year to date</div>
+  <div class="tab" onclick="switchTab('month',this)">Last 12 months</div>
+  <div class="tab" onclick="switchTab('attention',this)">Needs attention</div>
+</div>
+
+<div class="main">
+  <div id="loading" class="loading">
+    <div class="spinner"></div> Loading review data…
+  </div>
+
+  <!-- ══ YTD PANE ══════════════════════════════════════════════════════════ -->
+  <div id="pane-ytd" class="pane">
+    <div class="kpi-grid">
+      <div class="kpi k-dark">
+        <div class="kpi-label">Total reviews (YTD)</div>
+        <div class="kpi-value" id="ytd-total">—</div>
+        <div class="kpi-sub" id="ytd-year">—</div>
+      </div>
+      <div class="kpi k-green">
+        <div class="kpi-label">Avg rating</div>
+        <div class="kpi-value green" id="ytd-avg">—</div>
+        <div class="kpi-sub">Out of 5.0</div>
+      </div>
+      <div class="kpi k-blue">
+        <div class="kpi-label">Positive rate</div>
+        <div class="kpi-value blue" id="ytd-pos-pct">—</div>
+        <div class="kpi-sub">4–5 star reviews</div>
+      </div>
+      <div class="kpi k-red">
+        <div class="kpi-label">Need attention</div>
+        <div class="kpi-value red" id="ytd-neg">—</div>
+        <div class="kpi-sub">1–2 star reviews</div>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-label">Top products (YTD)</div>
+        <div id="ytd-products"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Star distribution</div>
+        <div id="ytd-stars"></div>
+        <div style="margin-top:18px">
+          <div class="card-label">Review status</div>
+          <div id="ytd-status"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sentiment</div>
+        <div class="sent-bar" id="ytd-sent-bar"></div>
+        <div class="legend" id="ytd-sent-legend" style="margin-bottom:18px"></div>
+        <div class="card-label">Avg sentiment score</div>
+        <div style="font-family:'DM Serif Display',serif;font-size:28px;color:var(--blue)" id="ytd-sentiment">—</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Out of 1.0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MONTHLY PANE ═══════════════════════════════════════════════════════ -->
+  <div id="pane-month" class="pane">
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-label">Monthly review volume</div>
+        <div style="position:relative;height:200px">
+          <canvas id="volChart" role="img" aria-label="Monthly review volume over 12 months"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg rating by month</div>
+        <div style="position:relative;height:200px">
+          <canvas id="ratingChart" role="img" aria-label="Average rating per month"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Positive vs negative by month</div>
+      <div style="position:relative;height:180px">
+        <canvas id="sentChart" role="img" aria-label="Stacked sentiment by month"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ATTENTION PANE ════════════════════════════════════════════════════ -->
+  <div id="pane-attention" class="pane">
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);max-width:700px;margin-bottom:20px">
+      <div class="kpi k-red">
+        <div class="kpi-label">1–2 star reviews (YTD)</div>
+        <div class="kpi-value red" id="att-neg">—</div>
+      </div>
+      <div class="kpi k-amber" style="--amber:#E49B0F">
+        <div class="kpi-label">3 star reviews (YTD)</div>
+        <div class="kpi-value" style="color:var(--amber)" id="att-neut">—</div>
+      </div>
+      <div class="kpi k-dark">
+        <div class="kpi-label">Negative rate</div>
+        <div class="kpi-value" id="att-neg-pct">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label" style="color:var(--red)">Low-rating reviews</div>
+      <div id="att-low-reviews"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let chartInstances = {};
+let dashData = null;
+
+function switchTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pane-' + id).classList.add('active');
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/data');
+    dashData = await res.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('pane-ytd').classList.add('active');
+    renderAll(dashData);
+  } catch(e) {
+    document.getElementById('loading').innerHTML = 'Failed to load data. Please refresh.';
+  }
+}
+
+async function manualRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = 'Refreshing…';
+  try {
+    await fetch('/api/refresh', { method: 'POST' });
+    await loadData();
+  } catch(e) {}
+  btn.disabled = false;
+  btn.textContent = '↻ Refresh';
+}
+
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const tc = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+const gc = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+function mkChart(id, type, data, opts) {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  chartInstances[id] = new Chart(ctx, { type, data, options: opts });
+}
+
+const baseScale = {
+  ticks: { color: tc, font: { size: 11, family: 'DM Sans' } },
+  grid:  { color: gc }
+};
+
+function renderAll(d) {
+  document.getElementById('refreshedAt').textContent = 'Updated ' + d.refreshed_at;
+
+  const ytd = d.ytd || {};
+  const mon = d.monthly || [];
+
+  // ── YTD KPIs
+  document.getElementById('ytd-total').textContent   = (ytd.total || 0).toLocaleString();
+  document.getElementById('ytd-year').textContent    = 'Jan 1 – today, ' + d.year;
+  document.getElementById('ytd-avg').textContent     = (ytd.avg_score || 0).toFixed(2) + ' ★';
+  document.getElementById('ytd-pos-pct').textContent = (ytd.pos_pct || 0).toFixed(1) + '%';
+  document.getElementById('ytd-neg').textContent     = (ytd.negative || 0).toLocaleString();
+  document.getElementById('ytd-sentiment').textContent = (ytd.avg_sentiment || 0).toFixed(2);
+
+  // ── YTD products
+  const prods = ytd.top_products || [];
+  const maxP  = prods[0] ? prods[0][2] : 1;
+  document.getElementById('ytd-products').innerHTML = prods.map(([n,a,c]) => `
+    <div class="bar-row">
+      <span class="bar-name" title="${n}">${n}</span>
+      <div class="bar-track"><div class="bar-fill blue" style="width:${Math.round(c/maxP*100)}%"></div></div>
+      <span class="bar-count">${c >= 1000 ? (c/1000).toFixed(1)+'k' : c}</span>
+      <span class="bar-avg">${a}★</span>
+    </div>`).join('');
+
+  // ── YTD stars
+  const stars   = ytd.stars || {};
+  const maxStar = Math.max(...[5,4,3,2,1].map(s => parseInt(stars[s]||0)));
+  const starCol  = s => s >= 4 ? 'green' : s === 3 ? 'amber' : 'red';
+  document.getElementById('ytd-stars').innerHTML = [5,4,3,2,1].map(s => {
+    const c = parseInt(stars[s] || 0);
+    return `<div class="bar-row">
+      <span class="bar-name narrow">${s}★</span>
+      <div class="bar-track"><div class="bar-fill ${starCol(s)}" style="width:${Math.round(c/maxStar*100)}%"></div></div>
+      <span class="bar-count">${c >= 1000 ? (c/1000).toFixed(1)+'k' : c}</span>
+    </div>`;
+  }).join('');
+
+  // ── YTD status
+  const statuses = ytd.statuses || {};
+  document.getElementById('ytd-status').innerHTML = Object.entries(statuses)
+    .sort((a,b) => b[1]-a[1])
+    .map(([k,v]) => `<div class="status-row"><span class="status-label">${k}</span><span class="status-val">${v.toLocaleString()}</span></div>`)
+    .join('');
+
+  // ── YTD sentiment bar
+  const tot  = (ytd.positive||0) + (ytd.neutral||0) + (ytd.negative||0) || 1;
+  const pPct = Math.round((ytd.positive||0)/tot*100);
+  const nPct = Math.round((ytd.neutral||0)/tot*100);
+  const gPct = 100 - pPct - nPct;
+  document.getElementById('ytd-sent-bar').innerHTML =
+    `<div style="width:${pPct}%;background:#1D9E75"></div>
+     <div style="width:${nPct}%;background:#B4B2A9"></div>
+     <div style="width:${gPct}%;background:#E24B4A"></div>`;
+  document.getElementById('ytd-sent-legend').innerHTML =
+    `<span><span class="dot" style="background:#1D9E75"></span>Positive ${pPct}%</span>
+     <span><span class="dot" style="background:#B4B2A9"></span>Neutral ${nPct}%</span>
+     <span><span class="dot" style="background:#E24B4A"></span>Negative ${gPct}%</span>`;
+
+  // ── Monthly charts
+  const labels = mon.map(m => m.label);
+  const counts = mon.map(m => m.count);
+  const avgs   = mon.map(m => m.avg);
+  const pos    = mon.map(m => m.pos);
+  const neut   = mon.map(m => m.neut);
+  const neg    = mon.map(m => m.neg);
+
+  mkChart('volChart', 'bar', {
+    labels,
+    datasets: [{ label: 'Reviews', data: counts, backgroundColor: '#378ADD', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale }
+    }
+  });
+
+  mkChart('ratingChart', 'line', {
+    labels,
+    datasets: [{
+      label: 'Avg rating', data: avgs,
+      borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,0.07)',
+      tension: 0.35, pointRadius: 4, pointBackgroundColor: '#1D9E75', fill: true
+    }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale, min: 4.4, max: 5.0 }
+    }
+  });
+
+  mkChart('sentChart', 'bar', {
+    labels,
+    datasets: [
+      { label: 'Positive', data: pos,  backgroundColor: '#1D9E75', stack: 's', barPercentage: 0.7 },
+      { label: 'Neutral',  data: neut, backgroundColor: '#B4B2A9', stack: 's', barPercentage: 0.7 },
+      { label: 'Negative', data: neg,  backgroundColor: '#E24B4A', stack: 's', barPercentage: 0.7 },
+    ]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: {
+      display: true, position: 'top', align: 'end',
+      labels: { boxWidth: 10, boxHeight: 10, borderRadius: 2, font: { size: 11, family: 'DM Sans' }, color: tc }
+    }},
+    scales: {
+      x: { ...baseScale, stacked: true, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale, stacked: true }
+    }
+  });
+
+  // ── Attention pane
+  document.getElementById('att-neg').textContent     = (ytd.negative || 0).toLocaleString();
+  document.getElementById('att-neut').textContent    = (ytd.neutral  || 0).toLocaleString();
+  document.getElementById('att-neg-pct').textContent = (ytd.neg_pct  || 0).toFixed(1) + '%';
+
+  const lowRevs = ytd.low_reviews || [];
+  document.getElementById('att-low-reviews').innerHTML = lowRevs.length === 0
+    ? '<p style="color:var(--muted);font-size:13px;padding:12px 0">No low-rating reviews in this period.</p>'
+    : lowRevs.map(r => {
+        const on  = '★'.repeat(r.score);
+        const off = '★'.repeat(5 - r.score);
+        return `<div class="low-row">
+          <div class="low-meta">
+            <span><span class="stars-red">${on}</span><span class="stars-gray">${off}</span></span>
+            <span class="low-name">${r.name}</span>
+            <span class="low-date">${r.date}</span>
+            <span class="low-badge">${r.product}</span>
+          </div>
+          ${r.title ? `<div style="font-size:12px;font-style:italic;color:var(--muted);margin-bottom:3px">${r.title}</div>` : ''}
+          <div class="low-content">${r.content}</div>
+        </div>`;
+      }).join('');
+}
+
+loadData();
+</script>
+</body>
+</html>
