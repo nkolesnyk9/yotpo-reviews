@@ -37,7 +37,7 @@
 
   /* ── Header ── */
   .site-header {
-    background: var(--text);
+    background: linear-gradient(135deg, #328ecc 0%, #72ffab 100%);
     padding: 20px 40px;
     display: flex;
     align-items: center;
@@ -49,15 +49,16 @@
     color: #fff;
     font-weight: 400;
     letter-spacing: -0.3px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.15);
   }
   .site-header .meta {
     font-size: 12px;
-    color: rgba(255,255,255,0.45);
+    color: rgba(255,255,255,0.7);
   }
   .refresh-btn {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: rgba(255,255,255,0.9);
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 12px;
@@ -65,7 +66,7 @@
     cursor: pointer;
     transition: background 0.15s;
   }
-  .refresh-btn:hover { background: rgba(255,255,255,0.18); }
+  .refresh-btn:hover { background: rgba(255,255,255,0.3); }
   .refresh-btn:disabled { opacity: 0.4; cursor: default; }
 
   /* ── Tabs ── */
@@ -232,11 +233,11 @@
   <h1>Review Dashboard</h1>
   <div style="display:flex;align-items:center;gap:14px">
     <span class="meta" id="refreshedAt">Loading…</span>
-    <label id="uploadBtn" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);
-      color:rgba(255,255,255,0.7);padding:6px 14px;border-radius:6px;font-size:12px;
+    <label id="uploadBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);
+      color:rgba(255,255,255,0.9);padding:6px 14px;border-radius:6px;font-size:12px;
       font-family:'DM Sans',sans-serif;cursor:pointer;transition:background 0.15s;"
-      onmouseover="this.style.background='rgba(255,255,255,0.18)'"
-      onmouseout="this.style.background='rgba(255,255,255,0.1)'"
+      onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+      onmouseout="this.style.background='rgba(255,255,255,0.2)'"
       title="Upload Yotpo CSV export to include rejected/pending reviews">
       ↑ Upload CSV
       <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">
@@ -248,7 +249,7 @@
 <div class="tabs-wrap">
   <div class="tab active" onclick="switchTab('ytd',this)">Year to date</div>
   <div class="tab" onclick="switchTab('month',this)">Last 12 months</div>
-  <div class="tab" onclick="switchTab('attention',this)">Needs attention</div>
+  <div class="tab" onclick="switchTab('attention',this)">Low ratings (1–2 stars)</div>
 </div>
 
 <div class="main">
@@ -275,7 +276,7 @@
         <div class="kpi-sub">4–5 star reviews</div>
       </div>
       <div class="kpi k-red">
-        <div class="kpi-label">Need attention</div>
+        <div class="kpi-label">Low ratings (YTD)</div>
         <div class="kpi-value red" id="ytd-neg">—</div>
         <div class="kpi-sub">1–2 star reviews</div>
       </div>

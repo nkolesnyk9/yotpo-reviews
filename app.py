@@ -41,6 +41,37 @@ DASHBOARD_URL    = os.environ.get("DASHBOARD_URL", "http://localhost:5000")
 
 _cache = {"data": None, "refreshed_at": None, "csv_rows": None}
 _lock  = threading.Lock()
+CSV_STORE = "/tmp/csv_reviews.json"  # persists across requests, survives restarts on Render disk
+
+def load_csv_store():
+    """Load previously uploaded CSV rows from disk."""
+    try:
+        if os.path.exists(CSV_STORE):
+            with open(CSV_STORE, "r") as f:
+                rows = json.load(f)
+            # Rehydrate datetime objects
+            for r in rows:
+                if isinstance(r.get("created"), str):
+                    r["created"] = datetime.strptime(r["created"], "%Y-%m-%d")
+            print(f"Loaded {len(rows)} CSV rows from disk")
+            return rows
+    except Exception as e:
+        print(f"Could not load CSV store: {e}")
+    return []
+
+def save_csv_store(rows):
+    """Persist CSV rows to disk."""
+    try:
+        serializable = []
+        for r in rows:
+            row = dict(r)
+            if isinstance(row.get("created"), datetime):
+                row["created"] = row["created"].strftime("%Y-%m-%d")
+            serializable.append(row)
+        with open(CSV_STORE, "w") as f:
+            json.dump(serializable, f)
+    except Exception as e:
+        print(f"Could not save CSV store: {e}")
 
 # ── Yotpo API ─────────────────────────────────────────────────────────────────
 
@@ -280,7 +311,7 @@ def process_reviews(reviews, sku_map=None):
         low_reviews = sorted(
             [r for r in rows if r["score"] <= 2],
             key=lambda x: x["created"], reverse=True
-        )[:10]
+        )
         total = len(scores)
         pos   = sum(1 for s in scores if s >= 4)
         neut  = sum(1 for s in scores if s == 3)
@@ -468,20 +499,43 @@ def api_refresh():
 
 @app.route("/api/upload-csv", methods=["POST"])
 def api_upload_csv():
-    """Accept a Yotpo CSV export, parse it, store in cache, reprocess data."""
+    """Accept a Yotpo CSV export, parse it, merge into existing CSV cache."""
     try:
         f = request.files.get("file")
         if not f:
             return jsonify({"error": "No file uploaded"}), 400
-        text = f.read().decode("utf-8-sig")  # handle BOM
-        rows = parse_csv_reviews(text)
-        if not rows:
+        text = f.read().decode("utf-8-sig")
+        new_rows = parse_csv_reviews(text)
+        if not new_rows:
             return jsonify({"error": "No valid reviews found in CSV"}), 400
+
         with _lock:
-            _cache["csv_rows"] = rows
-        # Reprocess with merged data
+            existing = _cache.get("csv_rows") or []
+            # Merge by review ID — new rows win on conflict
+            existing_ids = {str(r.get("id","")): i for i,r in enumerate(existing) if r.get("id")}
+            merged = list(existing)
+            added = 0
+            updated = 0
+            for row in new_rows:
+                rid = str(row.get("id",""))
+                if rid and rid in existing_ids:
+                    merged[existing_ids[rid]] = row
+                    updated += 1
+                else:
+                    merged.append(row)
+                    added += 1
+            _cache["csv_rows"] = merged
+            save_csv_store(merged)
+
         success = refresh_data()
-        return jsonify({"ok": True, "csv_rows": len(rows), "refreshed": success})
+        return jsonify({
+            "ok": True,
+            "new_rows": len(new_rows),
+            "added": added,
+            "updated": updated,
+            "total_csv_rows": len(merged),
+            "refreshed": success
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -545,8 +599,21 @@ def start_scheduler():
     scheduler.add_job(send_monthly_email, "cron", day=1, hour=7, minute=0)
     scheduler.start()
 
+# Load CSV data and start scheduler when module loads (works for both gunicorn and direct run)
+_startup_csv = load_csv_store()
+if _startup_csv:
+    _cache["csv_rows"] = _startup_csv
+start_scheduler()
+if YOTPO_APP_KEY and YOTPO_SECRET:
+    threading.Thread(target=refresh_data, daemon=True).start()
+
 if __name__ == "__main__":
     start_scheduler()
+    # Load any previously uploaded CSV data from disk
+    csv_rows = load_csv_store()
+    if csv_rows:
+        with _lock:
+            _cache["csv_rows"] = csv_rows
     if YOTPO_APP_KEY and YOTPO_SECRET:
         threading.Thread(target=refresh_data, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
