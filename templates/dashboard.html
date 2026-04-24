@@ -232,6 +232,15 @@
   <h1>Review Dashboard</h1>
   <div style="display:flex;align-items:center;gap:14px">
     <span class="meta" id="refreshedAt">Loading…</span>
+    <label id="uploadBtn" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);
+      color:rgba(255,255,255,0.7);padding:6px 14px;border-radius:6px;font-size:12px;
+      font-family:'DM Sans',sans-serif;cursor:pointer;transition:background 0.15s;"
+      onmouseover="this.style.background='rgba(255,255,255,0.18)'"
+      onmouseout="this.style.background='rgba(255,255,255,0.1)'"
+      title="Upload Yotpo CSV export to include rejected/pending reviews">
+      ↑ Upload CSV
+      <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">
+    </label>
     <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">↻ Refresh</button>
   </div>
 </header>
@@ -401,6 +410,29 @@ function switchTab(id, el) {
   document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('pane-' + id).classList.add('active');
+}
+
+async function uploadCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = document.getElementById('uploadBtn');
+  label.textContent = 'Uploading…';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res  = await fetch('/api/upload-csv', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.ok) {
+      label.innerHTML = '✓ CSV loaded <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+      await loadData();
+    } else {
+      alert('Upload failed: ' + (json.error || 'unknown error'));
+      label.innerHTML = '↑ Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+    }
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+    label.innerHTML = '↑ Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+  }
 }
 
 async function loadData() {
