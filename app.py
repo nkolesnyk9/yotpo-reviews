@@ -57,18 +57,23 @@ def fetch_reviews_by_status(token, status, days_back=1825):
     since = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     reviews = []
     page = 1
+    # For unpublished (pending/rejected), use deleted=true
+    params_base = {"utoken": token, "count": 100, "since_date": since}
+    if status == "published":
+        params_base["deleted"] = False
+    else:
+        params_base["deleted"] = True
+
     while True:
         r = requests.get(
             f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/reviews",
-            params={"utoken": token, "count": 100, "page": page,
-                    "since_date": since, "status": status},
+            params={**params_base, "page": page},
             timeout=30
         )
         r.raise_for_status()
         batch = r.json().get("reviews", [])
         if not batch:
             break
-        # Tag each review with its status
         for rev in batch:
             rev["_status"] = status
         reviews.extend(batch)
@@ -82,13 +87,19 @@ def fetch_reviews_by_status(token, status, days_back=1825):
 
 def fetch_all_reviews(token, days_back=1825):
     all_reviews = []
-    for status in ["published", "pending", "rejected"]:
-        try:
-            batch = fetch_reviews_by_status(token, status, days_back)
-            all_reviews.extend(batch)
-        except Exception as e:
-            print(f"Error fetching {status} reviews: {e}")
-    # Deduplicate by review id
+    # Fetch published reviews
+    try:
+        published = fetch_reviews_by_status(token, "published", days_back)
+        all_reviews.extend(published)
+    except Exception as e:
+        print(f"Error fetching published reviews: {e}")
+    # Fetch unpublished (pending + rejected)
+    try:
+        unpublished = fetch_reviews_by_status(token, "unpublished", days_back)
+        all_reviews.extend(unpublished)
+    except Exception as e:
+        print(f"Error fetching unpublished reviews: {e}")
+    # Deduplicate by id
     seen = set()
     unique = []
     for r in all_reviews:
@@ -96,7 +107,7 @@ def fetch_all_reviews(token, days_back=1825):
         if rid not in seen:
             seen.add(rid)
             unique.append(r)
-    print(f"Total unique reviews fetched: {len(unique)}")
+    print(f"Total unique reviews: {len(unique)}")
     return unique
 
 
