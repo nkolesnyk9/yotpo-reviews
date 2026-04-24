@@ -14,6 +14,8 @@ Environment variables (set in Render dashboard):
 """
 
 import os
+import io
+import csv
 import json
 import time
 import smtplib
@@ -23,7 +25,7 @@ from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
@@ -37,7 +39,7 @@ EMAIL_PASSWORD   = os.environ.get("EMAIL_PASSWORD", "")
 EMAIL_RECIPIENTS = [e.strip() for e in os.environ.get("EMAIL_RECIPIENTS", "").split(",") if e.strip()]
 DASHBOARD_URL    = os.environ.get("DASHBOARD_URL", "http://localhost:5000")
 
-_cache = {"data": None, "refreshed_at": None}
+_cache = {"data": None, "refreshed_at": None, "csv_rows": None}
 _lock  = threading.Lock()
 
 # ── Yotpo API ─────────────────────────────────────────────────────────────────
@@ -155,6 +157,34 @@ def fetch_sku_map(token):
 
 # ── Data Processing ───────────────────────────────────────────────────────────
 
+def parse_csv_reviews(csv_text):
+    """Parse a Yotpo CSV export into the same row format as the API."""
+    rows = []
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for r in reader:
+        try:
+            score = int(float(r.get("Review Score", 0)))
+            created_str = r.get("Review Creation Date", "")[:10]
+            created = datetime.strptime(created_str, "%Y-%m-%d")
+            rows.append({
+                "id": r.get("Review ID", ""),
+                "score": score,
+                "product": r.get("Product Title", "Unknown"),
+                "status": r.get("Review Status", "unknown").lower(),
+                "_status": r.get("Review Status", "unknown").lower(),
+                "sentiment": float(r.get("Sentiment Score", 0) or 0),
+                "created": created,
+                "date_str": created_str,
+                "name": r.get("Reviewer Display Name", "Anonymous"),
+                "title": r.get("Review Title", ""),
+                "content": r.get("Review Content", "")[:200],
+                "_from_csv": True,
+            })
+        except Exception:
+            continue
+    return rows
+
+
 def process_reviews(reviews, sku_map=None):
     if sku_map is None:
         sku_map = {}
@@ -164,34 +194,53 @@ def process_reviews(reviews, sku_map=None):
     ytd_rows  = []
     all_rows  = []
 
+    # Convert API reviews to row dicts
+    api_ids = set()
     for r in reviews:
         try:
             created = datetime.strptime(r["created_at"][:10], "%Y-%m-%d")
         except Exception:
             continue
-        score     = int(r.get("score", 0))
-        sku       = str(r.get("sku") or r.get("product_id") or "")
-        product   = sku_map.get(sku) or r.get("product_title") or (f"SKU {sku}" if sku else "Unknown")
-        sentiment = float(r.get("sentiment", 0) or 0)
+        score   = int(r.get("score", 0))
+        sku     = str(r.get("sku") or r.get("product_id") or "")
+        product = sku_map.get(sku) or r.get("product_title") or (f"SKU {sku}" if sku else "Unknown")
         row = {
             "score": score, "product": product,
             "status": r.get("_status") or r.get("status", "unknown"),
-            "sentiment": sentiment, "created": created,
+            "sentiment": float(r.get("sentiment", 0) or 0),
+            "created": created,
             "date_str": created.strftime("%Y-%m-%d"),
             "name":    r.get("name") or r.get("reviewer", {}).get("display_name", "Anonymous"),
             "title":   r.get("title", ""),
-            "content": r.get("content", ""),
+            "content": r.get("content", "")[:200],
         }
         all_rows.append(row)
-        if created >= ytd_start:
+        if r.get("id"):
+            api_ids.add(str(r["id"]))
+
+    # Merge CSV rows — only add rows not already in API data
+    with _lock:
+        csv_rows = _cache.get("csv_rows") or []
+    csv_added = 0
+    for row in csv_rows:
+        rid = str(row.get("id", ""))
+        if rid and rid in api_ids:
+            continue
+        all_rows.append(row)
+        csv_added += 1
+    if csv_added:
+        print(f"Merged {csv_added} additional rows from CSV upload")
+
+    for row in all_rows:
+        if row["created"] >= ytd_start:
             ytd_rows.append(row)
-        key = created.strftime("%Y-%m")
+        key = row["created"].strftime("%Y-%m")
         monthly[key]["count"] += 1
-        monthly[key]["scores"].append(score)
+        monthly[key]["scores"].append(row["score"])
         monthly[key]["rows"].append(row)
-        if score >= 4:   monthly[key]["pos"]  += 1
-        elif score <= 2: monthly[key]["neg"]  += 1
-        else:            monthly[key]["neut"] += 1
+        if row["score"] >= 4:   monthly[key]["pos"]  += 1
+        elif row["score"] <= 2: monthly[key]["neg"]  += 1
+        else:                   monthly[key]["neut"] += 1
 
     last12_keys = sorted(monthly.keys())[-12:]
     monthly_data = []
@@ -416,6 +465,25 @@ def api_data_month(year, month):
 def api_refresh():
     success = refresh_data()
     return jsonify({"ok": success})
+
+@app.route("/api/upload-csv", methods=["POST"])
+def api_upload_csv():
+    """Accept a Yotpo CSV export, parse it, store in cache, reprocess data."""
+    try:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "No file uploaded"}), 400
+        text = f.read().decode("utf-8-sig")  # handle BOM
+        rows = parse_csv_reviews(text)
+        if not rows:
+            return jsonify({"error": "No valid reviews found in CSV"}), 400
+        with _lock:
+            _cache["csv_rows"] = rows
+        # Reprocess with merged data
+        success = refresh_data()
+        return jsonify({"ok": True, "csv_rows": len(rows), "refreshed": success})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/send-email", methods=["POST"])
 def api_send_email():
