@@ -53,7 +53,7 @@ def get_yotpo_token():
     return r.json()["access_token"]
 
 
-def fetch_all_reviews(token, days_back=1825):
+def fetch_reviews_by_status(token, status, days_back=1825):
     since = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     reviews = []
     page = 1
@@ -61,19 +61,43 @@ def fetch_all_reviews(token, days_back=1825):
         r = requests.get(
             f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/reviews",
             params={"utoken": token, "count": 100, "page": page,
-                    "since_date": since},
+                    "since_date": since, "status": status},
             timeout=30
         )
         r.raise_for_status()
         batch = r.json().get("reviews", [])
         if not batch:
             break
+        # Tag each review with its status
+        for rev in batch:
+            rev["_status"] = status
         reviews.extend(batch)
         if len(batch) < 100:
             break
         page += 1
         time.sleep(0.2)
+    print(f"  Fetched {len(reviews)} {status} reviews")
     return reviews
+
+
+def fetch_all_reviews(token, days_back=1825):
+    all_reviews = []
+    for status in ["published", "pending", "rejected"]:
+        try:
+            batch = fetch_reviews_by_status(token, status, days_back)
+            all_reviews.extend(batch)
+        except Exception as e:
+            print(f"Error fetching {status} reviews: {e}")
+    # Deduplicate by review id
+    seen = set()
+    unique = []
+    for r in all_reviews:
+        rid = r.get("id")
+        if rid not in seen:
+            seen.add(rid)
+            unique.append(r)
+    print(f"Total unique reviews fetched: {len(unique)}")
+    return unique
 
 
 def fetch_sku_map(token):
@@ -140,7 +164,7 @@ def process_reviews(reviews, sku_map=None):
         sentiment = float(r.get("sentiment", 0) or 0)
         row = {
             "score": score, "product": product,
-            "status": r.get("status", ""),
+            "status": r.get("_status") or r.get("status", "unknown"),
             "sentiment": sentiment, "created": created,
             "date_str": created.strftime("%Y-%m-%d"),
             "name":    r.get("name") or r.get("reviewer", {}).get("display_name", "Anonymous"),
