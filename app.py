@@ -41,7 +41,7 @@ DASHBOARD_URL    = os.environ.get("DASHBOARD_URL", "http://localhost:5000")
 
 _cache = {"data": None, "refreshed_at": None, "csv_rows": None}
 _lock  = threading.Lock()
-CSV_STORE = "/tmp/csv_reviews.json"  # persists across requests, survives restarts on Render disk
+CSV_STORE = "/data/csv_reviews.json"  # persistent disk — survives deploys
 
 def load_csv_store():
     """Load previously uploaded CSV rows from disk."""
