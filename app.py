@@ -53,7 +53,7 @@ def get_yotpo_token():
     return r.json()["access_token"]
 
 
-def fetch_all_reviews(token, days_back=395):
+def fetch_all_reviews(token, days_back=1825):
     since = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     reviews = []
     page = 1
@@ -61,7 +61,7 @@ def fetch_all_reviews(token, days_back=395):
         r = requests.get(
             f"https://api.yotpo.com/v1/apps/{YOTPO_APP_KEY}/reviews",
             params={"utoken": token, "count": 100, "page": page,
-                    "since_date": since, "deleted": False},
+                    "since_date": since},
             timeout=30
         )
         r.raise_for_status()
@@ -125,7 +125,7 @@ def process_reviews(reviews, sku_map=None):
         sku_map = {}
     now       = datetime.utcnow()
     ytd_start = datetime(now.year, 1, 1)
-    monthly   = defaultdict(lambda: {"count":0,"scores":[],"pos":0,"neg":0,"neut":0})
+    monthly   = defaultdict(lambda: {"count":0,"scores":[],"pos":0,"neg":0,"neut":0,"rows":[]})
     ytd_rows  = []
     all_rows  = []
 
@@ -143,7 +143,7 @@ def process_reviews(reviews, sku_map=None):
             "status": r.get("status", ""),
             "sentiment": sentiment, "created": created,
             "date_str": created.strftime("%Y-%m-%d"),
-            "name":    r.get("reviewer", {}).get("display_name", "Anonymous"),
+            "name":    r.get("name") or r.get("reviewer", {}).get("display_name", "Anonymous"),
             "title":   r.get("title", ""),
             "content": r.get("content", ""),
         }
@@ -153,6 +153,7 @@ def process_reviews(reviews, sku_map=None):
         key = created.strftime("%Y-%m")
         monthly[key]["count"] += 1
         monthly[key]["scores"].append(score)
+        monthly[key]["rows"].append(row)
         if score >= 4:   monthly[key]["pos"]  += 1
         elif score <= 2: monthly[key]["neg"]  += 1
         else:            monthly[key]["neut"] += 1
@@ -162,11 +163,22 @@ def process_reviews(reviews, sku_map=None):
     for k in last12_keys:
         m = monthly[k]
         avg = round(sum(m["scores"]) / len(m["scores"]), 2) if m["scores"] else 0
+        low = sorted([r for r in m["rows"] if r["score"] <= 2],
+                     key=lambda x: x["created"], reverse=True)
+        prod_scores = defaultdict(list)
+        for r in m["rows"]:
+            prod_scores[r["product"]].append(r["score"])
+        top = sorted([(p, round(sum(s)/len(s),2), len(s)) for p,s in prod_scores.items()],
+                     key=lambda x: -x[2])[:10]
         monthly_data.append({
             "month": k,
             "label": datetime.strptime(k, "%Y-%m").strftime("%b %y"),
             "count": m["count"], "avg": avg,
             "pos": m["pos"], "neg": m["neg"], "neut": m["neut"],
+            "low_reviews": [{"score":r["score"],"name":r["name"],"date":r["date_str"],
+                             "product":r["product"],"title":r["title"],
+                             "content":r["content"][:200]} for r in low],
+            "top_products": [[p,a,c] for p,a,c in top],
         })
 
     def summarise(rows):
@@ -353,6 +365,17 @@ def index():
 @app.route("/api/data")
 def api_data():
     return jsonify(get_data())
+
+@app.route("/api/data/month/<int:year>/<int:month>")
+def api_data_month(year, month):
+    data = get_data()
+    # Filter all_rows isn't stored — re-summarise from monthly list
+    # Find matching monthly entry
+    key = f"{year}-{month:02d}"
+    monthly_entry = next((m for m in data["monthly"] if m["month"] == key), None)
+    if not monthly_entry:
+        return jsonify({"error": "No data for that month"}), 404
+    return jsonify(monthly_entry)
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():

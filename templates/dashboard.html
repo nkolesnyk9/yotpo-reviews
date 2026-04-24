@@ -298,25 +298,66 @@
 
   <!-- ══ MONTHLY PANE ═══════════════════════════════════════════════════════ -->
   <div id="pane-month" class="pane">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <label style="font-size:13px;color:var(--muted);font-weight:500">View month:</label>
+      <select id="monthSelect" onchange="renderMonthDrilldown()"
+        style="font-family:'DM Sans',sans-serif;font-size:13px;padding:7px 12px;
+               border:1px solid var(--border);border-radius:7px;background:var(--surface);
+               color:var(--text);cursor:pointer;outline:none;">
+      </select>
+    </div>
+
+    <!-- Month KPIs -->
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi k-dark">
+        <div class="kpi-label">Reviews</div>
+        <div class="kpi-value" id="m-total">—</div>
+      </div>
+      <div class="kpi k-green">
+        <div class="kpi-label">Avg rating</div>
+        <div class="kpi-value green" id="m-avg">—</div>
+      </div>
+      <div class="kpi k-blue">
+        <div class="kpi-label">Positive</div>
+        <div class="kpi-value blue" id="m-pos">—</div>
+      </div>
+      <div class="kpi k-red">
+        <div class="kpi-label">Need attention</div>
+        <div class="kpi-value red" id="m-neg">—</div>
+      </div>
+    </div>
+
     <div class="grid-2" style="margin-bottom:14px">
       <div class="card">
-        <div class="card-label">Monthly review volume</div>
-        <div style="position:relative;height:200px">
-          <canvas id="volChart" role="img" aria-label="Monthly review volume over 12 months"></canvas>
+        <div class="card-label">Volume over 12 months</div>
+        <div style="position:relative;height:190px">
+          <canvas id="volChart" role="img" aria-label="Monthly review volume"></canvas>
         </div>
       </div>
       <div class="card">
-        <div class="card-label">Avg rating by month</div>
-        <div style="position:relative;height:200px">
+        <div class="card-label">Avg rating over 12 months</div>
+        <div style="position:relative;height:190px">
           <canvas id="ratingChart" role="img" aria-label="Average rating per month"></canvas>
         </div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-label">Positive vs negative by month</div>
-      <div style="position:relative;height:180px">
-        <canvas id="sentChart" role="img" aria-label="Stacked sentiment by month"></canvas>
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-label">Top products this month</div>
+        <div id="m-products"></div>
       </div>
+      <div class="card">
+        <div class="card-label">Sentiment trend</div>
+        <div style="position:relative;height:190px">
+          <canvas id="sentChart" role="img" aria-label="Stacked sentiment by month"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:var(--red)">Low-rating reviews this month</div>
+      <div id="m-low-reviews"></div>
     </div>
   </div>
 
@@ -337,7 +378,15 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-label" style="color:var(--red)">Low-rating reviews</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="card-label" style="color:var(--red);margin:0">Low-rating reviews</div>
+        <select id="attMonthSelect" onchange="renderAttentionReviews()"
+          style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 10px;
+                 border:1px solid var(--border);border-radius:6px;background:var(--surface);
+                 color:var(--text);cursor:pointer;outline:none;">
+          <option value="ytd">Year to date</option>
+        </select>
+      </div>
       <div id="att-low-reviews"></div>
     </div>
   </div>
@@ -401,11 +450,11 @@ function renderAll(d) {
   const mon = d.monthly || [];
 
   // ── YTD KPIs
-  document.getElementById('ytd-total').textContent   = (ytd.total || 0).toLocaleString();
-  document.getElementById('ytd-year').textContent    = 'Jan 1 – today, ' + d.year;
-  document.getElementById('ytd-avg').textContent     = (ytd.avg_score || 0).toFixed(2) + ' ★';
-  document.getElementById('ytd-pos-pct').textContent = (ytd.pos_pct || 0).toFixed(1) + '%';
-  document.getElementById('ytd-neg').textContent     = (ytd.negative || 0).toLocaleString();
+  document.getElementById('ytd-total').textContent     = (ytd.total || 0).toLocaleString();
+  document.getElementById('ytd-year').textContent      = 'Jan 1 – today, ' + d.year;
+  document.getElementById('ytd-avg').textContent       = (ytd.avg_score || 0).toFixed(2) + ' ★';
+  document.getElementById('ytd-pos-pct').textContent   = (ytd.pos_pct || 0).toFixed(1) + '%';
+  document.getElementById('ytd-neg').textContent       = (ytd.negative || 0).toLocaleString();
   document.getElementById('ytd-sentiment').textContent = (ytd.avg_sentiment || 0).toFixed(2);
 
   // ── YTD products
@@ -422,7 +471,7 @@ function renderAll(d) {
   // ── YTD stars
   const stars   = ytd.stars || {};
   const maxStar = Math.max(...[5,4,3,2,1].map(s => parseInt(stars[s]||0)));
-  const starCol  = s => s >= 4 ? 'green' : s === 3 ? 'amber' : 'red';
+  const starCol = s => s >= 4 ? 'green' : s === 3 ? 'amber' : 'red';
   document.getElementById('ytd-stars').innerHTML = [5,4,3,2,1].map(s => {
     const c = parseInt(stars[s] || 0);
     return `<div class="bar-row">
@@ -436,7 +485,7 @@ function renderAll(d) {
   const statuses = ytd.statuses || {};
   document.getElementById('ytd-status').innerHTML = Object.entries(statuses)
     .sort((a,b) => b[1]-a[1])
-    .map(([k,v]) => `<div class="status-row"><span class="status-label">${k}</span><span class="status-val">${v.toLocaleString()}</span></div>`)
+    .map(([k,v]) => `<div class="status-row"><span class="status-label">${k || 'Unknown'}</span><span class="status-val">${v.toLocaleString()}</span></div>`)
     .join('');
 
   // ── YTD sentiment bar
@@ -508,28 +557,89 @@ function renderAll(d) {
     }
   });
 
+  // ── Populate month selectors
+  const sel  = document.getElementById('monthSelect');
+  const sel2 = document.getElementById('attMonthSelect');
+  sel.innerHTML = '';
+  sel2.innerHTML = '<option value="ytd">Year to date</option>';
+  [...mon].reverse().forEach(m => {
+    const opt  = new Option(m.label, m.month);
+    const opt2 = new Option(m.label, m.month);
+    sel.appendChild(opt);
+    sel2.appendChild(opt2);
+  });
+  // Default to most recent month
+  if (mon.length) sel.value = mon[mon.length - 1].month;
+
+  renderMonthDrilldown();
+
   // ── Attention pane
   document.getElementById('att-neg').textContent     = (ytd.negative || 0).toLocaleString();
   document.getElementById('att-neut').textContent    = (ytd.neutral  || 0).toLocaleString();
   document.getElementById('att-neg-pct').textContent = (ytd.neg_pct  || 0).toFixed(1) + '%';
+  renderAttentionReviews();
+}
 
-  const lowRevs = ytd.low_reviews || [];
-  document.getElementById('att-low-reviews').innerHTML = lowRevs.length === 0
-    ? '<p style="color:var(--muted);font-size:13px;padding:12px 0">No low-rating reviews in this period.</p>'
-    : lowRevs.map(r => {
-        const on  = '★'.repeat(r.score);
-        const off = '★'.repeat(5 - r.score);
-        return `<div class="low-row">
-          <div class="low-meta">
-            <span><span class="stars-red">${on}</span><span class="stars-gray">${off}</span></span>
-            <span class="low-name">${r.name}</span>
-            <span class="low-date">${r.date}</span>
-            <span class="low-badge">${r.product}</span>
-          </div>
-          ${r.title ? `<div style="font-size:12px;font-style:italic;color:var(--muted);margin-bottom:3px">${r.title}</div>` : ''}
-          <div class="low-content">${r.content}</div>
-        </div>`;
-      }).join('');
+function renderLowReviews(reviews, containerId) {
+  const el = document.getElementById(containerId);
+  if (!reviews || reviews.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:12px 0">No low-rating reviews in this period. 🎉</p>';
+    return;
+  }
+  el.innerHTML = reviews.map(r => {
+    const on  = '★'.repeat(r.score);
+    const off = '★'.repeat(5 - r.score);
+    return `<div class="low-row">
+      <div class="low-meta">
+        <span><span class="stars-red">${on}</span><span class="stars-gray">${off}</span></span>
+        <span class="low-name">${r.name}</span>
+        <span class="low-date">${r.date}</span>
+        <span class="low-badge">${r.product}</span>
+      </div>
+      ${r.title ? `<div style="font-size:12px;font-style:italic;color:var(--muted);margin-bottom:4px">${r.title}</div>` : ''}
+      <div class="low-content">${r.content}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMonthDrilldown() {
+  if (!dashData) return;
+  const key = document.getElementById('monthSelect').value;
+  const m   = dashData.monthly.find(x => x.month === key);
+  if (!m) return;
+
+  document.getElementById('m-total').textContent = m.count.toLocaleString();
+  document.getElementById('m-avg').textContent   = m.avg.toFixed(2) + ' ★';
+  document.getElementById('m-pos').textContent   = m.pos.toLocaleString();
+  document.getElementById('m-neg').textContent   = m.neg.toLocaleString();
+
+  // Top products this month
+  const prods = m.top_products || [];
+  const maxP  = prods[0] ? prods[0][2] : 1;
+  document.getElementById('m-products').innerHTML = prods.length
+    ? prods.map(([n,a,c]) => `
+        <div class="bar-row">
+          <span class="bar-name" title="${n}">${n}</span>
+          <div class="bar-track"><div class="bar-fill blue" style="width:${Math.round(c/maxP*100)}%"></div></div>
+          <span class="bar-count">${c}</span>
+          <span class="bar-avg" style="color:${a < 4.5 ? 'var(--amber)' : 'var(--green)'}">${a}★</span>
+        </div>`).join('')
+    : '<p style="color:var(--muted);font-size:13px">No product data</p>';
+
+  renderLowReviews(m.low_reviews || [], 'm-low-reviews');
+}
+
+function renderAttentionReviews() {
+  if (!dashData) return;
+  const val = document.getElementById('attMonthSelect').value;
+  let reviews;
+  if (val === 'ytd') {
+    reviews = dashData.ytd.low_reviews || [];
+  } else {
+    const m = dashData.monthly.find(x => x.month === val);
+    reviews = m ? (m.low_reviews || []) : [];
+  }
+  renderLowReviews(reviews, 'att-low-reviews');
 }
 
 loadData();
