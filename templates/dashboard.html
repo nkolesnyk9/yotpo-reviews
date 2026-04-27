@@ -516,9 +516,16 @@ function renderAll(d) {
 
   // ── YTD status
   const statuses = ytd.statuses || {};
+  const statusTotal = Object.values(statuses).reduce((a,b) => a+b, 0);
   document.getElementById('ytd-status').innerHTML = Object.entries(statuses)
     .sort((a,b) => b[1]-a[1])
-    .map(([k,v]) => `<div class="status-row"><span class="status-label">${k || 'Unknown'}</span><span class="status-val">${v.toLocaleString()}</span></div>`)
+    .map(([k,v]) => {
+      const pct = statusTotal > 0 ? Math.round(v/statusTotal*100) : 0;
+      return `<div class="status-row">
+        <span class="status-label">${k || 'Unknown'}</span>
+        <span class="status-val">${v.toLocaleString()} <span style="font-size:11px;color:var(--muted);font-weight:400">/ ${pct}%</span></span>
+      </div>`;
+    })
     .join('');
 
   // ── YTD sentiment bar
