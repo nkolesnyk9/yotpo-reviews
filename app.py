@@ -713,6 +713,9 @@ def api_upload_loyalty_csv():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+        
+@app.route("/api/send-email", methods=["POST"])
+def api_send_email():
     send_monthly_email()
     return jsonify({"ok": True})
 
