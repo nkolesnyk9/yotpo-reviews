@@ -43,6 +43,7 @@ _cache = {"data": None, "refreshed_at": None, "csv_rows": None, "loyalty_rows": 
 _lock  = threading.Lock()
 CSV_STORE = "/data/csv_reviews.json"  # persistent disk — survives deploys
 LOYALTY_STORE = "/data/csv_loyalty.json"  # persistent disk — survives deploys
+DATA_STORE = "/data/processed_data.json"  # last good processed reviews — survives restarts
 
 def load_csv_store():
     """Load previously uploaded CSV rows from disk."""
@@ -73,6 +74,26 @@ def save_csv_store(rows):
             json.dump(serializable, f)
     except Exception as e:
         print(f"Could not save CSV store: {e}")
+
+def load_data_store():
+    """Load the last good processed reviews data from disk (survives restarts)."""
+    try:
+        if os.path.exists(DATA_STORE):
+            with open(DATA_STORE, "r") as f:
+                data = json.load(f)
+            print("Loaded processed reviews data from disk")
+            return data
+    except Exception as e:
+        print(f"Could not load data store: {e}")
+    return None
+
+def save_data_store(data):
+    """Persist the processed reviews data to disk."""
+    try:
+        with open(DATA_STORE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Could not save data store: {e}")
 
 def load_loyalty_store():
     """Load previously uploaded loyalty (redemptions) rows from disk."""
@@ -483,6 +504,7 @@ def refresh_data():
         with _lock:
             _cache["data"]         = data
             _cache["refreshed_at"] = datetime.utcnow()
+        save_data_store(data)
         print(f"[{datetime.utcnow()}] Done — {data['full']['total']} reviews loaded.")
         return True
     except Exception as e:
@@ -539,11 +561,20 @@ def get_data():
     with _lock:
         if _cache["data"]:
             return _cache["data"]
-    if YOTPO_APP_KEY and YOTPO_SECRET:
-        refresh_data()
+        already_refreshing = _cache.get("refreshing", False)
+    # No cached data yet. Kick off the Yotpo refresh in the BACKGROUND so the
+    # page never blocks on a slow/unresponsive Yotpo API, and serve sample data
+    # immediately. Once the background refresh finishes, later loads get real data.
+    if YOTPO_APP_KEY and YOTPO_SECRET and not already_refreshing:
         with _lock:
-            if _cache["data"]:
-                return _cache["data"]
+            _cache["refreshing"] = True
+        def _bg_refresh():
+            try:
+                refresh_data()
+            finally:
+                with _lock:
+                    _cache["refreshing"] = False
+        threading.Thread(target=_bg_refresh, daemon=True).start()
     return load_sample_data()
 
 
@@ -781,6 +812,9 @@ if _startup_csv:
 _startup_loyalty = load_loyalty_store()
 if _startup_loyalty:
     _cache["loyalty_rows"] = _startup_loyalty
+_startup_data = load_data_store()
+if _startup_data:
+    _cache["data"] = _startup_data
 start_scheduler()
 if YOTPO_APP_KEY and YOTPO_SECRET:
     threading.Thread(target=refresh_data, daemon=True).start()
@@ -796,6 +830,10 @@ if __name__ == "__main__":
     if loyalty_rows:
         with _lock:
             _cache["loyalty_rows"] = loyalty_rows
+    saved_data = load_data_store()
+    if saved_data:
+        with _lock:
+            _cache["data"] = saved_data
     if YOTPO_APP_KEY and YOTPO_SECRET:
         threading.Thread(target=refresh_data, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
