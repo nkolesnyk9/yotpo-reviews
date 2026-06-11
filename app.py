@@ -39,9 +39,10 @@ EMAIL_PASSWORD   = os.environ.get("EMAIL_PASSWORD", "")
 EMAIL_RECIPIENTS = [e.strip() for e in os.environ.get("EMAIL_RECIPIENTS", "").split(",") if e.strip()]
 DASHBOARD_URL    = os.environ.get("DASHBOARD_URL", "http://localhost:5000")
 
-_cache = {"data": None, "refreshed_at": None, "csv_rows": None}
+_cache = {"data": None, "refreshed_at": None, "csv_rows": None, "loyalty_rows": None}
 _lock  = threading.Lock()
 CSV_STORE = "/data/csv_reviews.json"  # persistent disk — survives deploys
+LOYALTY_STORE = "/data/csv_loyalty.json"  # persistent disk — survives deploys
 
 def load_csv_store():
     """Load previously uploaded CSV rows from disk."""
@@ -72,6 +73,26 @@ def save_csv_store(rows):
             json.dump(serializable, f)
     except Exception as e:
         print(f"Could not save CSV store: {e}")
+
+def load_loyalty_store():
+    """Load previously uploaded loyalty (redemptions) rows from disk."""
+    try:
+        if os.path.exists(LOYALTY_STORE):
+            with open(LOYALTY_STORE, "r") as f:
+                rows = json.load(f)
+            print(f"Loaded {len(rows)} loyalty rows from disk")
+            return rows
+    except Exception as e:
+        print(f"Could not load loyalty store: {e}")
+    return []
+
+def save_loyalty_store(rows):
+    """Persist loyalty rows to disk. Rows are plain dicts (no datetime objects)."""
+    try:
+        with open(LOYALTY_STORE, "w") as f:
+            json.dump(rows, f)
+    except Exception as e:
+        print(f"Could not save loyalty store: {e}")
 
 # ── Yotpo API ─────────────────────────────────────────────────────────────────
 
@@ -214,6 +235,113 @@ def parse_csv_reviews(csv_text):
         except Exception:
             continue
     return rows
+
+
+def _loy_int(s):
+    """Parse an integer that may be negative or blank."""
+    s = (str(s) or "").strip()
+    neg = s.startswith("-")
+    digits = s.lstrip("-")
+    return (-int(digits) if neg else int(digits)) if digits.isdigit() else 0
+
+
+def parse_loyalty_csv(csv_text):
+    """Parse a Yotpo Loyalty & Referrals redemptions CSV export into row dicts.
+
+    Expected columns (from the redemptions export):
+      date, first_name, last_name, email, coupon_type, description,
+      points, discount_id, discount_code, times_used, amount_used_cents,
+      order_id, source
+    Rows where source == "Referral Program" are referral conversions;
+    all other rows are point-spending reward redemptions.
+    A synthetic id (date|email|description) is used for dedup.
+    """
+    rows = []
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for r in reader:
+        date_str = (r.get("date", "") or "")[:10]
+        if not date_str:
+            continue
+        email = (r.get("email", "") or "").strip()
+        desc = (r.get("description", "") or "").strip()
+        source = (r.get("source", "") or "").strip()
+        points = _loy_int(r.get("points", 0))
+        rid = f"{date_str}|{email}|{desc}|{points}"
+        rows.append({
+            "id": rid,
+            "date": date_str,
+            "month": date_str[:7],
+            "email": email,
+            "description": desc,
+            "source": source,
+            "points": points,
+            "is_referral": source == "Referral Program",
+        })
+    return rows
+
+
+def analyze_loyalty(rows):
+    """Build the Referrals and Rewards summary from stored loyalty rows."""
+    if not rows:
+        return None
+
+    referral_rows = [r for r in rows if r.get("is_referral")]
+    reward_rows   = [r for r in rows if not r.get("is_referral")]
+
+    def by_month(items):
+        d = defaultdict(int)
+        for r in items:
+            d[r["month"]] += 1
+        return dict(sorted(d.items()))
+
+    def points_by_month(items):
+        d = defaultdict(int)
+        for r in items:
+            d[r["month"]] += abs(r["points"])
+        return dict(sorted(d.items()))
+
+    def month_label(ym):
+        try:
+            return datetime.strptime(ym, "%Y-%m").strftime("%b %y")
+        except Exception:
+            return ym
+
+    def offers(items, limit=8):
+        c = Counter(r["description"] for r in items if r["description"])
+        return [[name, n] for name, n in c.most_common(limit)]
+
+    ref_bm = by_month(referral_rows)
+    rew_bm = by_month(reward_rows)
+    rew_pts_bm = points_by_month(reward_rows)
+    total_points = sum(abs(r["points"]) for r in reward_rows)
+
+    all_dates = [r["date"] for r in rows if r["date"]]
+    date_range = f"{min(all_dates)} to {max(all_dates)}" if all_dates else "N/A"
+
+    recent = sorted(reward_rows, key=lambda x: x["date"], reverse=True)[:12]
+
+    return {
+        "date_range": date_range,
+        "referrals": {
+            "total": len(referral_rows),
+            "unique_customers": len({r["email"] for r in referral_rows if r["email"]}),
+            "avg_per_month": round(len(referral_rows) / len(ref_bm), 1) if ref_bm else 0,
+            "by_month": [{"month": k, "label": month_label(k), "count": v} for k, v in ref_bm.items()],
+            "offers": offers(referral_rows),
+        },
+        "rewards": {
+            "total": len(reward_rows),
+            "unique_customers": len({r["email"] for r in reward_rows if r["email"]}),
+            "total_points": total_points,
+            "avg_points": round(total_points / len(reward_rows)) if reward_rows else 0,
+            "by_month": [{"month": k, "label": month_label(k), "count": v} for k, v in rew_bm.items()],
+            "points_by_month": [{"month": k, "label": month_label(k), "points": v} for k, v in rew_pts_bm.items()],
+            "offers": offers(reward_rows),
+            "recent": [{"date": r["date"], "email": r["email"],
+                        "description": r["description"], "points": abs(r["points"])}
+                       for r in recent],
+        },
+    }
 
 
 def process_reviews(reviews, sku_map=None):
@@ -479,7 +607,13 @@ def index():
 
 @app.route("/api/data")
 def api_data():
-    return jsonify(get_data())
+    data = get_data()
+    # Attach loyalty (referrals + rewards) built from uploaded redemptions CSV
+    with _lock:
+        loyalty_rows = _cache.get("loyalty_rows") or []
+    data = dict(data)  # shallow copy so we don't mutate the cache
+    data["loyalty"] = analyze_loyalty(loyalty_rows)
+    return jsonify(data)
 
 @app.route("/api/data/month/<int:year>/<int:month>")
 def api_data_month(year, month):
@@ -539,8 +673,46 @@ def api_upload_csv():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/send-email", methods=["POST"])
-def api_send_email():
+@app.route("/api/upload-loyalty-csv", methods=["POST"])
+def api_upload_loyalty_csv():
+    """Accept a Yotpo Loyalty & Referrals redemptions CSV, parse it,
+    merge into the stored loyalty rows (dedup by synthetic id)."""
+    try:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "No file uploaded"}), 400
+        text = f.read().decode("utf-8-sig")
+        new_rows = parse_loyalty_csv(text)
+        if not new_rows:
+            return jsonify({"error": "No valid redemption rows found in CSV. "
+                                     "Make sure this is the Loyalty & Referrals "
+                                     "redemptions export."}), 400
+
+        with _lock:
+            existing = _cache.get("loyalty_rows") or []
+            existing_ids = {r.get("id"): i for i, r in enumerate(existing) if r.get("id")}
+            merged = list(existing)
+            added = updated = 0
+            for row in new_rows:
+                rid = row.get("id")
+                if rid and rid in existing_ids:
+                    merged[existing_ids[rid]] = row
+                    updated += 1
+                else:
+                    merged.append(row)
+                    added += 1
+            _cache["loyalty_rows"] = merged
+            save_loyalty_store(merged)
+
+        return jsonify({
+            "ok": True,
+            "new_rows": len(new_rows),
+            "added": added,
+            "updated": updated,
+            "total_loyalty_rows": len(merged),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     send_monthly_email()
     return jsonify({"ok": True})
 
@@ -603,6 +775,9 @@ def start_scheduler():
 _startup_csv = load_csv_store()
 if _startup_csv:
     _cache["csv_rows"] = _startup_csv
+_startup_loyalty = load_loyalty_store()
+if _startup_loyalty:
+    _cache["loyalty_rows"] = _startup_loyalty
 start_scheduler()
 if YOTPO_APP_KEY and YOTPO_SECRET:
     threading.Thread(target=refresh_data, daemon=True).start()
@@ -614,6 +789,10 @@ if __name__ == "__main__":
     if csv_rows:
         with _lock:
             _cache["csv_rows"] = csv_rows
+    loyalty_rows = load_loyalty_store()
+    if loyalty_rows:
+        with _lock:
+            _cache["loyalty_rows"] = loyalty_rows
     if YOTPO_APP_KEY and YOTPO_SECRET:
         threading.Thread(target=refresh_data, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)

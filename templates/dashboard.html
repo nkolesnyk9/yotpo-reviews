@@ -242,6 +242,15 @@
       ↑ Upload CSV
       <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">
     </label>
+    <label id="uploadLoyaltyBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);
+      color:rgba(255,255,255,0.9);padding:6px 14px;border-radius:6px;font-size:12px;
+      font-family:'DM Sans',sans-serif;cursor:pointer;transition:background 0.15s;"
+      onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+      onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+      title="Upload Yotpo Loyalty & Referrals redemptions CSV for the Referrals and Rewards tabs">
+      ↑ Loyalty CSV
+      <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">
+    </label>
     <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">↻ Refresh</button>
   </div>
 </header>
@@ -250,6 +259,8 @@
   <div class="tab active" onclick="switchTab('ytd',this)">Year to date</div>
   <div class="tab" onclick="switchTab('month',this)">Last 12 months</div>
   <div class="tab" onclick="switchTab('attention',this)">Low ratings (1–2 stars)</div>
+  <div class="tab" onclick="switchTab('referrals',this)">Referrals</div>
+  <div class="tab" onclick="switchTab('rewards',this)">Rewards</div>
 </div>
 
 <div class="main">
@@ -400,6 +411,98 @@
       <div id="att-low-reviews"></div>
     </div>
   </div>
+
+  <!-- ══ REFERRALS PANE ═════════════════════════════════════════════════════ -->
+  <div id="pane-referrals" class="pane">
+    <div id="referrals-empty" class="info-banner" style="display:none">
+      No referral data yet. Click <strong style="margin:0 3px">↑ Loyalty CSV</strong> above to upload your Yotpo Loyalty &amp; Referrals redemptions export.
+    </div>
+    <div id="referrals-content" style="display:none">
+      <div class="info-banner" id="loyalty-range-ref"></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);max-width:760px">
+        <div class="kpi k-green">
+          <div class="kpi-label">Referral redemptions</div>
+          <div class="kpi-value green" id="ref-total">—</div>
+          <div class="kpi-sub">Referred customers claiming an offer</div>
+        </div>
+        <div class="kpi k-dark">
+          <div class="kpi-label">Unique customers</div>
+          <div class="kpi-value" id="ref-unique">—</div>
+        </div>
+        <div class="kpi k-blue">
+          <div class="kpi-label">Avg per month</div>
+          <div class="kpi-value blue" id="ref-avg">—</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:14px">
+        <div class="card">
+          <div class="card-label">Referrals by month</div>
+          <div style="position:relative;height:220px">
+            <canvas id="refChart" role="img" aria-label="Referral redemptions per month"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Referral offers redeemed</div>
+          <div id="ref-offers"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ REWARDS PANE ═══════════════════════════════════════════════════════ -->
+  <div id="pane-rewards" class="pane">
+    <div id="rewards-empty" class="info-banner" style="display:none">
+      No rewards data yet. Click <strong style="margin:0 3px">↑ Loyalty CSV</strong> above to upload your Yotpo Loyalty &amp; Referrals redemptions export.
+    </div>
+    <div id="rewards-content" style="display:none">
+      <div class="info-banner" id="loyalty-range-rew"></div>
+      <div class="kpi-grid">
+        <div class="kpi k-blue">
+          <div class="kpi-label">Rewards redeemed</div>
+          <div class="kpi-value blue" id="rew-total">—</div>
+        </div>
+        <div class="kpi k-dark">
+          <div class="kpi-label">Unique customers</div>
+          <div class="kpi-value" id="rew-unique">—</div>
+        </div>
+        <div class="kpi k-green">
+          <div class="kpi-label">Total points spent</div>
+          <div class="kpi-value green" id="rew-points">—</div>
+        </div>
+        <div class="kpi k-amber" style="--amber:#E49B0F">
+          <div class="kpi-label">Avg points / reward</div>
+          <div class="kpi-value" style="color:var(--amber)" id="rew-avg">—</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:6px">
+        <div class="card">
+          <div class="card-label">Rewards redeemed by month</div>
+          <div style="position:relative;height:200px">
+            <canvas id="rewChart" role="img" aria-label="Rewards redeemed per month"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Points spent by month</div>
+          <div style="position:relative;height:200px">
+            <canvas id="rewPtsChart" role="img" aria-label="Points spent per month"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:14px">
+        <div class="card">
+          <div class="card-label">Rewards redeemed</div>
+          <div id="rew-offers"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Most recent redemptions</div>
+          <div id="rew-recent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -433,6 +536,29 @@ async function uploadCSV(input) {
   } catch(e) {
     alert('Upload error: ' + e.message);
     label.innerHTML = '↑ Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+  }
+}
+
+async function uploadLoyaltyCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = document.getElementById('uploadLoyaltyBtn');
+  label.textContent = 'Uploading…';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res  = await fetch('/api/upload-loyalty-csv', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.ok) {
+      label.innerHTML = '✓ Loyalty loaded <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
+      await loadData();
+    } else {
+      alert('Upload failed: ' + (json.error || 'unknown error'));
+      label.innerHTML = '↑ Loyalty CSV <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
+    }
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+    label.innerHTML = '↑ Loyalty CSV <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
   }
 }
 
@@ -618,6 +744,9 @@ function renderAll(d) {
   document.getElementById('att-neut').textContent    = (ytd.neutral  || 0).toLocaleString();
   document.getElementById('att-neg-pct').textContent = (ytd.neg_pct  || 0).toFixed(1) + '%';
   renderAttentionReviews();
+
+  // ── Loyalty (referrals + rewards)
+  renderLoyalty(d.loyalty);
 }
 
 function renderLowReviews(reviews, containerId) {
@@ -680,6 +809,110 @@ function renderAttentionReviews() {
     reviews = m ? (m.low_reviews || []) : [];
   }
   renderLowReviews(reviews, 'att-low-reviews');
+}
+
+function fmtNum(n) {
+  return (n || 0).toLocaleString();
+}
+
+function barList(items, maxVal, colorClass) {
+  if (!items || !items.length) {
+    return '<p style="color:var(--muted);font-size:13px;padding:8px 0">No data.</p>';
+  }
+  return items.map(([name, count]) => `
+    <div class="bar-row">
+      <span class="bar-name" title="${name}">${name}</span>
+      <div class="bar-track"><div class="bar-fill ${colorClass}" style="width:${Math.round(count/maxVal*100)}%"></div></div>
+      <span class="bar-count">${count >= 1000 ? (count/1000).toFixed(1)+'k' : count}</span>
+    </div>`).join('');
+}
+
+function renderLoyalty(loy) {
+  const refEmpty = document.getElementById('referrals-empty');
+  const refContent = document.getElementById('referrals-content');
+  const rewEmpty = document.getElementById('rewards-empty');
+  const rewContent = document.getElementById('rewards-content');
+
+  if (!loy) {
+    refEmpty.style.display = 'flex';  refContent.style.display = 'none';
+    rewEmpty.style.display = 'flex';  rewContent.style.display = 'none';
+    return;
+  }
+  refEmpty.style.display = 'none';  refContent.style.display = 'block';
+  rewEmpty.style.display = 'none';  rewContent.style.display = 'block';
+
+  const rangeText = 'Data range: ' + (loy.date_range || 'N/A');
+  document.getElementById('loyalty-range-ref').textContent = rangeText;
+  document.getElementById('loyalty-range-rew').textContent = rangeText;
+
+  // ── Referrals
+  const ref = loy.referrals || {};
+  document.getElementById('ref-total').textContent  = fmtNum(ref.total);
+  document.getElementById('ref-unique').textContent = fmtNum(ref.unique_customers);
+  document.getElementById('ref-avg').textContent    = (ref.avg_per_month || 0);
+
+  const refMonths = ref.by_month || [];
+  mkChart('refChart', 'bar', {
+    labels: refMonths.map(m => m.label),
+    datasets: [{ label: 'Referrals', data: refMonths.map(m => m.count),
+                 backgroundColor: '#1D9E75', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const refOffers = ref.offers || [];
+  const refMax = refOffers[0] ? refOffers[0][1] : 1;
+  document.getElementById('ref-offers').innerHTML = barList(refOffers, refMax, 'green');
+
+  // ── Rewards
+  const rew = loy.rewards || {};
+  document.getElementById('rew-total').textContent  = fmtNum(rew.total);
+  document.getElementById('rew-unique').textContent = fmtNum(rew.unique_customers);
+  const pts = rew.total_points || 0;
+  document.getElementById('rew-points').textContent = pts >= 1000 ? (pts/1000).toFixed(0)+'k' : pts;
+  document.getElementById('rew-avg').textContent    = fmtNum(rew.avg_points);
+
+  const rewMonths = rew.by_month || [];
+  mkChart('rewChart', 'bar', {
+    labels: rewMonths.map(m => m.label),
+    datasets: [{ label: 'Rewards', data: rewMonths.map(m => m.count),
+                 backgroundColor: '#378ADD', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const rewPtsMonths = rew.points_by_month || [];
+  mkChart('rewPtsChart', 'line', {
+    labels: rewPtsMonths.map(m => m.label),
+    datasets: [{ label: 'Points', data: rewPtsMonths.map(m => m.points),
+                 borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,0.07)',
+                 tension: 0.35, pointRadius: 4, pointBackgroundColor: '#1D9E75', fill: true }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const rewOffers = rew.offers || [];
+  const rewMax = rewOffers[0] ? rewOffers[0][1] : 1;
+  document.getElementById('rew-offers').innerHTML = barList(rewOffers, rewMax, 'blue');
+
+  const recent = rew.recent || [];
+  document.getElementById('rew-recent').innerHTML = recent.length
+    ? recent.map(r => `
+        <div class="low-row">
+          <div class="low-meta">
+            <span class="low-name">${r.email || 'Unknown'}</span>
+            <span class="low-date">${r.date}</span>
+            <span class="low-badge" style="background:var(--blue-bg);color:var(--blue)">−${fmtNum(r.points)} pts</span>
+          </div>
+          <div class="low-content">${r.description}</div>
+        </div>`).join('')
+    : '<p style="color:var(--muted);font-size:13px">No redemptions.</p>';
 }
 
 loadData();
