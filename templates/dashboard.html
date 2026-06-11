@@ -815,6 +815,13 @@ function fmtNum(n) {
   return (n || 0).toLocaleString();
 }
 
+function fmtCompact(n) {
+  n = n || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 2) + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
+  return String(n);
+}
+
 function barList(items, maxVal, colorClass) {
   if (!items || !items.length) {
     return '<p style="color:var(--muted);font-size:13px;padding:8px 0">No data.</p>';
@@ -871,7 +878,7 @@ function renderLoyalty(loy) {
   document.getElementById('rew-total').textContent  = fmtNum(rew.total);
   document.getElementById('rew-unique').textContent = fmtNum(rew.unique_customers);
   const pts = rew.total_points || 0;
-  document.getElementById('rew-points').textContent = pts >= 1000 ? (pts/1000).toFixed(0)+'k' : pts;
+  document.getElementById('rew-points').textContent = fmtCompact(pts);
   document.getElementById('rew-avg').textContent    = fmtNum(rew.avg_points);
 
   const rewMonths = rew.by_month || [];
