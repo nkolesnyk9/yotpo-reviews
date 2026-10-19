@@ -380,6 +380,18 @@
       <div class="card-label" style="color:var(--red)">Low-rating reviews this month</div>
       <div id="m-low-reviews"></div>
     </div>
+
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px">
+        <div class="card-label" style="color:var(--red);margin:0">Courses with most complaints</div>
+        <div style="font-size:11px;color:var(--muted)" id="comp-window"></div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        1–2★ reviews over the rolling last 12 months, by course — independent of the month picker above.
+        Count is primary; the share of that course's reviews is shown for context.
+      </div>
+      <div id="m-complaints"></div>
+    </div>
   </div>
 
   <!-- ══ ATTENTION PANE ════════════════════════════════════════════════════ -->
@@ -738,6 +750,7 @@ function renderAll(d) {
   if (mon.length) sel.value = mon[mon.length - 1].month;
 
   renderMonthDrilldown();
+  renderComplaints(d.complaints);
 
   // ── Attention pane
   document.getElementById('att-neg').textContent     = (ytd.negative || 0).toLocaleString();
@@ -796,6 +809,30 @@ function renderMonthDrilldown() {
     : '<p style="color:var(--muted);font-size:13px">No product data</p>';
 
   renderLowReviews(m.low_reviews || [], 'm-low-reviews');
+}
+
+function renderComplaints(c) {
+  const el  = document.getElementById('m-complaints');
+  const win = document.getElementById('comp-window');
+  if (!el) return;
+  if (!c || !c.courses || !c.courses.length) {
+    if (win) win.textContent = '';
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:8px 0">No complaints in the last 12 months. 🎉</p>';
+    return;
+  }
+  if (win) {
+    win.textContent = c.start + ' – ' + c.end + ' · ' +
+      (c.total_complaints || 0).toLocaleString() + ' complaints / ' +
+      (c.total_reviews || 0).toLocaleString() + ' reviews';
+  }
+  const maxC = c.courses[0] ? c.courses[0].complaints : 1;
+  el.innerHTML = c.courses.map(x => `
+    <div class="bar-row">
+      <span class="bar-name" title="${x.product}">${x.product}</span>
+      <div class="bar-track"><div class="bar-fill red" style="width:${Math.round(x.complaints/maxC*100)}%"></div></div>
+      <span class="bar-count" style="color:var(--text);font-weight:500">${x.complaints}</span>
+      <span style="font-size:11px;color:var(--muted);width:96px;text-align:right;flex-shrink:0">of ${x.total} (${x.rate}%)</span>
+    </div>`).join('');
 }
 
 function renderAttentionReviews() {
