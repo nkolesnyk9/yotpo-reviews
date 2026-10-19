@@ -365,6 +365,42 @@ def analyze_loyalty(rows):
     }
 
 
+def complaints_last12(all_rows, max_star=2, days=365, top_n=12):
+    """Rank courses by number of 'complaint' reviews over the rolling last `days`.
+    A complaint is a review scored 1..max_star. Sentiment is deliberately NOT used:
+    on this data it tracks short/terse text, not unhappiness (e.g. "awsum tysm"
+    scores low), so it over-flags positive reviews. Set max_star=3 to widen to 1-3★.
+    """
+    now = datetime.utcnow()
+    start = now - timedelta(days=days)
+    window = [r for r in all_rows if r.get("created") and r["created"] >= start]
+
+    totals = Counter(r["product"] for r in window)
+    comp = Counter(r["product"] for r in window if 1 <= r.get("score", 0) <= max_star)
+
+    courses = []
+    for product, c in comp.most_common(top_n):
+        tot = totals.get(product, 0)
+        courses.append({
+            "product": product, "complaints": c, "total": tot,
+            "rate": round(100 * c / tot, 1) if tot else 0.0,
+        })
+
+    scores = [r["score"] for r in window]
+    total_complaints = sum(comp.values())
+    return {
+        "max_star": max_star,
+        "window_days": days,
+        "start": start.strftime("%Y-%m-%d"),
+        "end": now.strftime("%Y-%m-%d"),
+        "total_reviews": len(window),
+        "total_complaints": total_complaints,
+        "complaint_rate": round(100 * total_complaints / len(window), 1) if window else 0.0,
+        "avg_score": round(sum(scores) / len(scores), 2) if scores else 0,
+        "courses": courses,
+    }
+
+
 def process_reviews(reviews, sku_map=None):
     if sku_map is None:
         sku_map = {}
@@ -484,9 +520,10 @@ def process_reviews(reviews, sku_map=None):
         }
 
     return {
-        "ytd":     summarise(ytd_rows),
-        "full":    summarise(all_rows),
-        "monthly": monthly_data,
+        "ytd":        summarise(ytd_rows),
+        "full":       summarise(all_rows),
+        "monthly":    monthly_data,
+        "complaints": complaints_last12(all_rows),
         "refreshed_at": datetime.utcnow().strftime("%b %d, %Y %H:%M UTC"),
         "year":    now.year,
     }
@@ -550,8 +587,24 @@ def load_sample_data():
             {"score":1,"name":"Matthew C.","date":"2026-04-01","product":"Analyzing Financial Reports","title":"Not engaging","content":"It was boring"},
         ],
     }
+    complaints = {
+        "max_star":2,"window_days":365,
+        "start":(datetime.utcnow()-timedelta(days=365)).strftime("%Y-%m-%d"),
+        "end":datetime.utcnow().strftime("%Y-%m-%d"),
+        "total_reviews":3913,"total_complaints":93,"complaint_rate":2.4,"avg_score":4.80,
+        "courses":[
+            {"product":"Excel Crash Course","complaints":12,"total":398,"rate":3.0},
+            {"product":"Accounting Crash Course","complaints":10,"total":504,"rate":2.0},
+            {"product":"LBO Modeling","complaints":8,"total":98,"rate":8.2},
+            {"product":"Financial Statement Modeling","complaints":5,"total":543,"rate":0.9},
+            {"product":"DCF Modeling","complaints":5,"total":215,"rate":2.3},
+            {"product":"Analyzing Financial Reports","complaints":5,"total":72,"rate":6.9},
+            {"product":"Excel Basics (Mac)","complaints":4,"total":292,"rate":1.4},
+            {"product":"M&A Modeling","complaints":3,"total":102,"rate":2.9},
+        ],
+    }
     return {
-        "ytd":summary,"full":summary,"monthly":monthly,
+        "ytd":summary,"full":summary,"monthly":monthly,"complaints":complaints,
         "refreshed_at":"Sample data — add API keys to load live data",
         "year":datetime.utcnow().year,
     }

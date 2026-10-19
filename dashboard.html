@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WSP Review Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #f7f6f2;
+    --surface:  #ffffff;
+    --border:   #e4e2db;
+    --text:     #1a1a2e;
+    --muted:    #888780;
+    --green:    #1D9E75;
+    --blue:     #378ADD;
+    --red:      #E24B4A;
+    --amber:    #E49B0F;
+    --green-bg: #eaf7f1;
+    --blue-bg:  #e6f1fb;
+    --red-bg:   #fcebeb;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    background: linear-gradient(135deg, #328ecc 0%, #72ffab 100%);
+    padding: 20px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .site-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    color: #fff;
+    font-weight: 400;
+    letter-spacing: -0.3px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .site-header .meta {
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+  }
+  .refresh-btn {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: rgba(255,255,255,0.9);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .refresh-btn:hover { background: rgba(255,255,255,0.3); }
+  .refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* ── Tabs ── */
+  .tabs-wrap {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .tab {
+    padding: 14px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); }
+
+  /* ── Layout ── */
+  .main { padding: 28px 40px; max-width: 1200px; margin: 0 auto; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ── KPI grid ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .kpi.k-dark::before  { background: var(--text); }
+  .kpi.k-green::before { background: var(--green); }
+  .kpi.k-blue::before  { background: var(--blue); }
+  .kpi.k-red::before   { background: var(--red); }
+  .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .kpi-value { font-family: 'DM Serif Display', serif; font-size: 32px; line-height: 1; color: var(--text); }
+  .kpi-value.green { color: var(--green); }
+  .kpi-value.blue  { color: var(--blue); }
+  .kpi-value.red   { color: var(--red); }
+  .kpi-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* ── Chart cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .grid-3 { display: grid; grid-template-columns: 1.15fr 0.95fr 0.9fr; gap: 14px; margin-bottom: 14px; }
+
+  /* ── Bar rows ── */
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .bar-row:last-child { margin-bottom: 0; }
+  .bar-name { font-size: 12px; color: var(--text); width: 180px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-name.narrow { width: 32px; color: var(--muted); }
+  .bar-track { flex: 1; background: #f0ede6; border-radius: 3px; height: 7px; overflow: hidden; }
+  .bar-fill { height: 7px; border-radius: 3px; transition: width 0.6s ease; }
+  .bar-fill.blue  { background: var(--blue); }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.red   { background: var(--red); }
+  .bar-fill.amber { background: var(--amber); }
+  .bar-count { font-size: 12px; color: var(--muted); width: 36px; text-align: right; flex-shrink: 0; }
+  .bar-avg   { font-size: 11px; color: var(--green); width: 34px; text-align: right; flex-shrink: 0; }
+
+  /* ── Sentiment bar ── */
+  .sent-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Status rows ── */
+  .status-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-label { color: var(--muted); }
+  .status-val   { font-weight: 500; }
+
+  /* ── Low reviews ── */
+  .low-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .low-row:last-child { border-bottom: none; }
+  .low-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px; }
+  .low-name { font-size: 13px; font-weight: 500; }
+  .low-date { font-size: 11px; color: var(--muted); }
+  .low-badge {
+    font-size: 11px; padding: 2px 8px;
+    background: #f0ede6; color: var(--muted);
+    border-radius: 4px;
+  }
+  .low-content { font-size: 13px; color: #555; line-height: 1.5; }
+  .stars-red  { color: var(--red); font-size: 13px; letter-spacing: 1px; }
+  .stars-gray { color: #d8d5ce; font-size: 13px; letter-spacing: 1px; }
+
+  /* ── Info banner ── */
+  .info-banner {
+    background: #f0ede6; border: 1px solid var(--border);
+    border-radius: 7px; padding: 10px 14px;
+    font-size: 12px; color: var(--muted);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 300px; color: var(--muted); font-size: 14px;
+    gap: 10px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .main { padding: 16px; }
+    .site-header { padding: 14px 16px; }
+    .tabs-wrap { padding: 0 16px; overflow-x: auto; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .bar-name { width: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <h1>Review Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:14px">
+    <span class="meta" id="refreshedAt">Loading…</span>
+    <label id="uploadBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);
+      color:rgba(255,255,255,0.9);padding:6px 14px;border-radius:6px;font-size:12px;
+      font-family:'DM Sans',sans-serif;cursor:pointer;transition:background 0.15s;"
+      onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+      onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+      title="Upload Yotpo CSV export to include rejected/pending reviews">
+      ↑ Upload CSV
+      <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">
+    </label>
+    <label id="uploadLoyaltyBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);
+      color:rgba(255,255,255,0.9);padding:6px 14px;border-radius:6px;font-size:12px;
+      font-family:'DM Sans',sans-serif;cursor:pointer;transition:background 0.15s;"
+      onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+      onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+      title="Upload Yotpo Loyalty & Referrals redemptions CSV for the Referrals and Rewards tabs">
+      ↑ Loyalty CSV
+      <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">
+    </label>
+    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="tabs-wrap">
+  <div class="tab active" onclick="switchTab('ytd',this)">Year to date</div>
+  <div class="tab" onclick="switchTab('month',this)">Last 12 months</div>
+  <div class="tab" onclick="switchTab('attention',this)">Low ratings (1–2 stars)</div>
+  <div class="tab" onclick="switchTab('referrals',this)">Referrals</div>
+  <div class="tab" onclick="switchTab('rewards',this)">Rewards</div>
+</div>
+
+<div class="main">
+  <div id="loading" class="loading">
+    <div class="spinner"></div> Loading review data…
+  </div>
+
+  <!-- ══ YTD PANE ══════════════════════════════════════════════════════════ -->
+  <div id="pane-ytd" class="pane">
+    <div class="kpi-grid">
+      <div class="kpi k-dark">
+        <div class="kpi-label">Total reviews (YTD)</div>
+        <div class="kpi-value" id="ytd-total">—</div>
+        <div class="kpi-sub" id="ytd-year">—</div>
+      </div>
+      <div class="kpi k-green">
+        <div class="kpi-label">Avg rating</div>
+        <div class="kpi-value green" id="ytd-avg">—</div>
+        <div class="kpi-sub">Out of 5.0</div>
+      </div>
+      <div class="kpi k-blue">
+        <div class="kpi-label">Positive rate</div>
+        <div class="kpi-value blue" id="ytd-pos-pct">—</div>
+        <div class="kpi-sub">4–5 star reviews</div>
+      </div>
+      <div class="kpi k-red">
+        <div class="kpi-label">Low ratings (YTD)</div>
+        <div class="kpi-value red" id="ytd-neg">—</div>
+        <div class="kpi-sub">1–2 star reviews</div>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-label">Top products (YTD)</div>
+        <div id="ytd-products"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Star distribution</div>
+        <div id="ytd-stars"></div>
+        <div style="margin-top:18px">
+          <div class="card-label">Review status</div>
+          <div id="ytd-status"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sentiment</div>
+        <div class="sent-bar" id="ytd-sent-bar"></div>
+        <div class="legend" id="ytd-sent-legend" style="margin-bottom:18px"></div>
+        <div class="card-label">Avg sentiment score</div>
+        <div style="font-family:'DM Serif Display',serif;font-size:28px;color:var(--blue)" id="ytd-sentiment">—</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Out of 1.0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MONTHLY PANE ═══════════════════════════════════════════════════════ -->
+  <div id="pane-month" class="pane">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <label style="font-size:13px;color:var(--muted);font-weight:500">View month:</label>
+      <select id="monthSelect" onchange="renderMonthDrilldown()"
+        style="font-family:'DM Sans',sans-serif;font-size:13px;padding:7px 12px;
+               border:1px solid var(--border);border-radius:7px;background:var(--surface);
+               color:var(--text);cursor:pointer;outline:none;">
+      </select>
+    </div>
+
+    <!-- Month KPIs -->
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi k-dark">
+        <div class="kpi-label">Reviews</div>
+        <div class="kpi-value" id="m-total">—</div>
+      </div>
+      <div class="kpi k-green">
+        <div class="kpi-label">Avg rating</div>
+        <div class="kpi-value green" id="m-avg">—</div>
+      </div>
+      <div class="kpi k-blue">
+        <div class="kpi-label">Positive</div>
+        <div class="kpi-value blue" id="m-pos">—</div>
+      </div>
+      <div class="kpi k-red">
+        <div class="kpi-label">Need attention</div>
+        <div class="kpi-value red" id="m-neg">—</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-label">Volume over 12 months</div>
+        <div style="position:relative;height:190px">
+          <canvas id="volChart" role="img" aria-label="Monthly review volume"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">Avg rating over 12 months</div>
+        <div style="position:relative;height:190px">
+          <canvas id="ratingChart" role="img" aria-label="Average rating per month"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card">
+        <div class="card-label">Top products this month</div>
+        <div id="m-products"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sentiment trend</div>
+        <div style="position:relative;height:190px">
+          <canvas id="sentChart" role="img" aria-label="Stacked sentiment by month"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label" style="color:var(--red)">Low-rating reviews this month</div>
+      <div id="m-low-reviews"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px">
+        <div class="card-label" style="color:var(--red);margin:0">Courses with most complaints</div>
+        <div style="font-size:11px;color:var(--muted)" id="comp-window"></div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        1–2★ reviews over the rolling last 12 months, by course — independent of the month picker above.
+        Count is primary; the share of that course's reviews is shown for context.
+      </div>
+      <div id="m-complaints"></div>
+    </div>
+  </div>
+
+  <!-- ══ ATTENTION PANE ════════════════════════════════════════════════════ -->
+  <div id="pane-attention" class="pane">
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);max-width:700px;margin-bottom:20px">
+      <div class="kpi k-red">
+        <div class="kpi-label">1–2 star reviews (YTD)</div>
+        <div class="kpi-value red" id="att-neg">—</div>
+      </div>
+      <div class="kpi k-amber" style="--amber:#E49B0F">
+        <div class="kpi-label">3 star reviews (YTD)</div>
+        <div class="kpi-value" style="color:var(--amber)" id="att-neut">—</div>
+      </div>
+      <div class="kpi k-dark">
+        <div class="kpi-label">Negative rate</div>
+        <div class="kpi-value" id="att-neg-pct">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="card-label" style="color:var(--red);margin:0">Low-rating reviews</div>
+        <select id="attMonthSelect" onchange="renderAttentionReviews()"
+          style="font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 10px;
+                 border:1px solid var(--border);border-radius:6px;background:var(--surface);
+                 color:var(--text);cursor:pointer;outline:none;">
+          <option value="ytd">Year to date</option>
+        </select>
+      </div>
+      <div id="att-low-reviews"></div>
+    </div>
+  </div>
+
+  <!-- ══ REFERRALS PANE ═════════════════════════════════════════════════════ -->
+  <div id="pane-referrals" class="pane">
+    <div id="referrals-empty" class="info-banner" style="display:none">
+      No referral data yet. Click <strong style="margin:0 3px">↑ Loyalty CSV</strong> above to upload your Yotpo Loyalty &amp; Referrals redemptions export.
+    </div>
+    <div id="referrals-content" style="display:none">
+      <div class="info-banner" id="loyalty-range-ref"></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);max-width:760px">
+        <div class="kpi k-green">
+          <div class="kpi-label">Referral redemptions</div>
+          <div class="kpi-value green" id="ref-total">—</div>
+          <div class="kpi-sub">Referred customers claiming an offer</div>
+        </div>
+        <div class="kpi k-dark">
+          <div class="kpi-label">Unique customers</div>
+          <div class="kpi-value" id="ref-unique">—</div>
+        </div>
+        <div class="kpi k-blue">
+          <div class="kpi-label">Avg per month</div>
+          <div class="kpi-value blue" id="ref-avg">—</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:14px">
+        <div class="card">
+          <div class="card-label">Referrals by month</div>
+          <div style="position:relative;height:220px">
+            <canvas id="refChart" role="img" aria-label="Referral redemptions per month"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Referral offers redeemed</div>
+          <div id="ref-offers"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ REWARDS PANE ═══════════════════════════════════════════════════════ -->
+  <div id="pane-rewards" class="pane">
+    <div id="rewards-empty" class="info-banner" style="display:none">
+      No rewards data yet. Click <strong style="margin:0 3px">↑ Loyalty CSV</strong> above to upload your Yotpo Loyalty &amp; Referrals redemptions export.
+    </div>
+    <div id="rewards-content" style="display:none">
+      <div class="info-banner" id="loyalty-range-rew"></div>
+      <div class="kpi-grid">
+        <div class="kpi k-blue">
+          <div class="kpi-label">Rewards redeemed</div>
+          <div class="kpi-value blue" id="rew-total">—</div>
+        </div>
+        <div class="kpi k-dark">
+          <div class="kpi-label">Unique customers</div>
+          <div class="kpi-value" id="rew-unique">—</div>
+        </div>
+        <div class="kpi k-green">
+          <div class="kpi-label">Total points spent</div>
+          <div class="kpi-value green" id="rew-points">—</div>
+        </div>
+        <div class="kpi k-amber" style="--amber:#E49B0F">
+          <div class="kpi-label">Avg points / reward</div>
+          <div class="kpi-value" style="color:var(--amber)" id="rew-avg">—</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:6px">
+        <div class="card">
+          <div class="card-label">Rewards redeemed by month</div>
+          <div style="position:relative;height:200px">
+            <canvas id="rewChart" role="img" aria-label="Rewards redeemed per month"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Points spent by month</div>
+          <div style="position:relative;height:200px">
+            <canvas id="rewPtsChart" role="img" aria-label="Points spent per month"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:14px">
+        <div class="card">
+          <div class="card-label">Rewards redeemed</div>
+          <div id="rew-offers"></div>
+        </div>
+        <div class="card">
+          <div class="card-label">Most recent redemptions</div>
+          <div id="rew-recent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let chartInstances = {};
+let dashData = null;
+
+function switchTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pane-' + id).classList.add('active');
+}
+
+async function uploadCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = document.getElementById('uploadBtn');
+  label.textContent = 'Uploading…';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res  = await fetch('/api/upload-csv', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.ok) {
+      label.innerHTML = '✓ CSV loaded <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+      await loadData();
+    } else {
+      alert('Upload failed: ' + (json.error || 'unknown error'));
+      label.innerHTML = '↑ Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+    }
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+    label.innerHTML = '↑ Upload CSV <input type="file" accept=".csv" style="display:none" onchange="uploadCSV(this)">';
+  }
+}
+
+async function uploadLoyaltyCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label = document.getElementById('uploadLoyaltyBtn');
+  label.textContent = 'Uploading…';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res  = await fetch('/api/upload-loyalty-csv', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (json.ok) {
+      label.innerHTML = '✓ Loyalty loaded <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
+      await loadData();
+    } else {
+      alert('Upload failed: ' + (json.error || 'unknown error'));
+      label.innerHTML = '↑ Loyalty CSV <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
+    }
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+    label.innerHTML = '↑ Loyalty CSV <input type="file" accept=".csv" style="display:none" onchange="uploadLoyaltyCSV(this)">';
+  }
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/data');
+    dashData = await res.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('pane-ytd').classList.add('active');
+    renderAll(dashData);
+  } catch(e) {
+    document.getElementById('loading').innerHTML = 'Failed to load data. Please refresh.';
+  }
+}
+
+async function manualRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = 'Refreshing…';
+  try {
+    await fetch('/api/refresh', { method: 'POST' });
+    await loadData();
+  } catch(e) {}
+  btn.disabled = false;
+  btn.textContent = '↻ Refresh';
+}
+
+const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const tc = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+const gc = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+function mkChart(id, type, data, opts) {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  chartInstances[id] = new Chart(ctx, { type, data, options: opts });
+}
+
+const baseScale = {
+  ticks: { color: tc, font: { size: 11, family: 'DM Sans' } },
+  grid:  { color: gc }
+};
+
+function renderAll(d) {
+  document.getElementById('refreshedAt').textContent = 'Updated ' + d.refreshed_at;
+
+  const ytd = d.ytd || {};
+  const mon = d.monthly || [];
+
+  // ── YTD KPIs
+  document.getElementById('ytd-total').textContent     = (ytd.total || 0).toLocaleString();
+  document.getElementById('ytd-year').textContent      = 'Jan 1 – today, ' + d.year;
+  document.getElementById('ytd-avg').textContent       = (ytd.avg_score || 0).toFixed(2) + ' ★';
+  document.getElementById('ytd-pos-pct').textContent   = (ytd.pos_pct || 0).toFixed(1) + '%';
+  document.getElementById('ytd-neg').textContent       = (ytd.negative || 0).toLocaleString();
+  document.getElementById('ytd-sentiment').textContent = (ytd.avg_sentiment || 0).toFixed(2);
+
+  // ── YTD products
+  const prods = ytd.top_products || [];
+  const maxP  = prods[0] ? prods[0][2] : 1;
+  document.getElementById('ytd-products').innerHTML = prods.map(([n,a,c]) => `
+    <div class="bar-row">
+      <span class="bar-name" title="${n}">${n}</span>
+      <div class="bar-track"><div class="bar-fill blue" style="width:${Math.round(c/maxP*100)}%"></div></div>
+      <span class="bar-count">${c >= 1000 ? (c/1000).toFixed(1)+'k' : c}</span>
+      <span class="bar-avg">${a}★</span>
+    </div>`).join('');
+
+  // ── YTD stars
+  const stars   = ytd.stars || {};
+  const maxStar = Math.max(...[5,4,3,2,1].map(s => parseInt(stars[s]||0)));
+  const starCol = s => s >= 4 ? 'green' : s === 3 ? 'amber' : 'red';
+  document.getElementById('ytd-stars').innerHTML = [5,4,3,2,1].map(s => {
+    const c = parseInt(stars[s] || 0);
+    return `<div class="bar-row">
+      <span class="bar-name narrow">${s}★</span>
+      <div class="bar-track"><div class="bar-fill ${starCol(s)}" style="width:${Math.round(c/maxStar*100)}%"></div></div>
+      <span class="bar-count">${c >= 1000 ? (c/1000).toFixed(1)+'k' : c}</span>
+    </div>`;
+  }).join('');
+
+  // ── YTD status
+  const statuses = ytd.statuses || {};
+  const statusTotal = Object.values(statuses).reduce((a,b) => a+b, 0);
+  document.getElementById('ytd-status').innerHTML = Object.entries(statuses)
+    .sort((a,b) => b[1]-a[1])
+    .map(([k,v]) => {
+      const pct = statusTotal > 0 ? Math.round(v/statusTotal*100) : 0;
+      return `<div class="status-row">
+        <span class="status-label">${k || 'Unknown'}</span>
+        <span class="status-val">${v.toLocaleString()} <span style="font-size:11px;color:var(--muted);font-weight:400">/ ${pct}%</span></span>
+      </div>`;
+    })
+    .join('');
+
+  // ── YTD sentiment bar
+  const tot  = (ytd.positive||0) + (ytd.neutral||0) + (ytd.negative||0) || 1;
+  const pPct = Math.round((ytd.positive||0)/tot*100);
+  const nPct = Math.round((ytd.neutral||0)/tot*100);
+  const gPct = 100 - pPct - nPct;
+  document.getElementById('ytd-sent-bar').innerHTML =
+    `<div style="width:${pPct}%;background:#1D9E75"></div>
+     <div style="width:${nPct}%;background:#B4B2A9"></div>
+     <div style="width:${gPct}%;background:#E24B4A"></div>`;
+  document.getElementById('ytd-sent-legend').innerHTML =
+    `<span><span class="dot" style="background:#1D9E75"></span>Positive ${pPct}%</span>
+     <span><span class="dot" style="background:#B4B2A9"></span>Neutral ${nPct}%</span>
+     <span><span class="dot" style="background:#E24B4A"></span>Negative ${gPct}%</span>`;
+
+  // ── Monthly charts
+  const labels = mon.map(m => m.label);
+  const counts = mon.map(m => m.count);
+  const avgs   = mon.map(m => m.avg);
+  const pos    = mon.map(m => m.pos);
+  const neut   = mon.map(m => m.neut);
+  const neg    = mon.map(m => m.neg);
+
+  mkChart('volChart', 'bar', {
+    labels,
+    datasets: [{ label: 'Reviews', data: counts, backgroundColor: '#378ADD', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale }
+    }
+  });
+
+  mkChart('ratingChart', 'line', {
+    labels,
+    datasets: [{
+      label: 'Avg rating', data: avgs,
+      borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,0.07)',
+      tension: 0.35, pointRadius: 4, pointBackgroundColor: '#1D9E75', fill: true
+    }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale, min: 4.4, max: 5.0 }
+    }
+  });
+
+  mkChart('sentChart', 'bar', {
+    labels,
+    datasets: [
+      { label: 'Positive', data: pos,  backgroundColor: '#1D9E75', stack: 's', barPercentage: 0.7 },
+      { label: 'Neutral',  data: neut, backgroundColor: '#B4B2A9', stack: 's', barPercentage: 0.7 },
+      { label: 'Negative', data: neg,  backgroundColor: '#E24B4A', stack: 's', barPercentage: 0.7 },
+    ]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: {
+      display: true, position: 'top', align: 'end',
+      labels: { boxWidth: 10, boxHeight: 10, borderRadius: 2, font: { size: 11, family: 'DM Sans' }, color: tc }
+    }},
+    scales: {
+      x: { ...baseScale, stacked: true, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } },
+      y: { ...baseScale, stacked: true }
+    }
+  });
+
+  // ── Populate month selectors
+  const sel  = document.getElementById('monthSelect');
+  const sel2 = document.getElementById('attMonthSelect');
+  sel.innerHTML = '';
+  sel2.innerHTML = '<option value="ytd">Year to date</option>';
+  [...mon].reverse().forEach(m => {
+    const opt  = new Option(m.label, m.month);
+    const opt2 = new Option(m.label, m.month);
+    sel.appendChild(opt);
+    sel2.appendChild(opt2);
+  });
+  // Default to most recent month
+  if (mon.length) sel.value = mon[mon.length - 1].month;
+
+  renderMonthDrilldown();
+  renderComplaints(d.complaints);
+
+  // ── Attention pane
+  document.getElementById('att-neg').textContent     = (ytd.negative || 0).toLocaleString();
+  document.getElementById('att-neut').textContent    = (ytd.neutral  || 0).toLocaleString();
+  document.getElementById('att-neg-pct').textContent = (ytd.neg_pct  || 0).toFixed(1) + '%';
+  renderAttentionReviews();
+
+  // ── Loyalty (referrals + rewards)
+  renderLoyalty(d.loyalty);
+}
+
+function renderLowReviews(reviews, containerId) {
+  const el = document.getElementById(containerId);
+  if (!reviews || reviews.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:12px 0">No low-rating reviews in this period. 🎉</p>';
+    return;
+  }
+  el.innerHTML = reviews.map(r => {
+    const on  = '★'.repeat(r.score);
+    const off = '★'.repeat(5 - r.score);
+    return `<div class="low-row">
+      <div class="low-meta">
+        <span><span class="stars-red">${on}</span><span class="stars-gray">${off}</span></span>
+        <span class="low-name">${r.name}</span>
+        <span class="low-date">${r.date}</span>
+        <span class="low-badge">${r.product}</span>
+      </div>
+      ${r.title ? `<div style="font-size:12px;font-style:italic;color:var(--muted);margin-bottom:4px">${r.title}</div>` : ''}
+      <div class="low-content">${r.content}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMonthDrilldown() {
+  if (!dashData) return;
+  const key = document.getElementById('monthSelect').value;
+  const m   = dashData.monthly.find(x => x.month === key);
+  if (!m) return;
+
+  document.getElementById('m-total').textContent = m.count.toLocaleString();
+  document.getElementById('m-avg').textContent   = m.avg.toFixed(2) + ' ★';
+  document.getElementById('m-pos').textContent   = m.pos.toLocaleString();
+  document.getElementById('m-neg').textContent   = m.neg.toLocaleString();
+
+  // Top products this month
+  const prods = m.top_products || [];
+  const maxP  = prods[0] ? prods[0][2] : 1;
+  document.getElementById('m-products').innerHTML = prods.length
+    ? prods.map(([n,a,c]) => `
+        <div class="bar-row">
+          <span class="bar-name" title="${n}">${n}</span>
+          <div class="bar-track"><div class="bar-fill blue" style="width:${Math.round(c/maxP*100)}%"></div></div>
+          <span class="bar-count">${c}</span>
+          <span class="bar-avg" style="color:${a < 4.5 ? 'var(--amber)' : 'var(--green)'}">${a}★</span>
+        </div>`).join('')
+    : '<p style="color:var(--muted);font-size:13px">No product data</p>';
+
+  renderLowReviews(m.low_reviews || [], 'm-low-reviews');
+}
+
+function renderComplaints(c) {
+  const el  = document.getElementById('m-complaints');
+  const win = document.getElementById('comp-window');
+  if (!el) return;
+  if (!c || !c.courses || !c.courses.length) {
+    if (win) win.textContent = '';
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:8px 0">No complaints in the last 12 months. 🎉</p>';
+    return;
+  }
+  if (win) {
+    win.textContent = c.start + ' – ' + c.end + ' · ' +
+      (c.total_complaints || 0).toLocaleString() + ' complaints / ' +
+      (c.total_reviews || 0).toLocaleString() + ' reviews';
+  }
+  const maxC = c.courses[0] ? c.courses[0].complaints : 1;
+  el.innerHTML = c.courses.map(x => `
+    <div class="bar-row">
+      <span class="bar-name" title="${x.product}">${x.product}</span>
+      <div class="bar-track"><div class="bar-fill red" style="width:${Math.round(x.complaints/maxC*100)}%"></div></div>
+      <span class="bar-count" style="color:var(--text);font-weight:500">${x.complaints}</span>
+      <span style="font-size:11px;color:var(--muted);width:96px;text-align:right;flex-shrink:0">of ${x.total} (${x.rate}%)</span>
+    </div>`).join('');
+}
+
+function renderAttentionReviews() {
+  if (!dashData) return;
+  const val = document.getElementById('attMonthSelect').value;
+  let reviews;
+  if (val === 'ytd') {
+    reviews = dashData.ytd.low_reviews || [];
+  } else {
+    const m = dashData.monthly.find(x => x.month === val);
+    reviews = m ? (m.low_reviews || []) : [];
+  }
+  renderLowReviews(reviews, 'att-low-reviews');
+}
+
+function fmtNum(n) {
+  return (n || 0).toLocaleString();
+}
+
+function fmtCompact(n) {
+  n = n || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 2) + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
+  return String(n);
+}
+
+function barList(items, maxVal, colorClass) {
+  if (!items || !items.length) {
+    return '<p style="color:var(--muted);font-size:13px;padding:8px 0">No data.</p>';
+  }
+  return items.map(([name, count]) => `
+    <div class="bar-row">
+      <span class="bar-name" title="${name}">${name}</span>
+      <div class="bar-track"><div class="bar-fill ${colorClass}" style="width:${Math.round(count/maxVal*100)}%"></div></div>
+      <span class="bar-count">${count >= 1000 ? (count/1000).toFixed(1)+'k' : count}</span>
+    </div>`).join('');
+}
+
+function renderLoyalty(loy) {
+  const refEmpty = document.getElementById('referrals-empty');
+  const refContent = document.getElementById('referrals-content');
+  const rewEmpty = document.getElementById('rewards-empty');
+  const rewContent = document.getElementById('rewards-content');
+
+  if (!loy) {
+    refEmpty.style.display = 'flex';  refContent.style.display = 'none';
+    rewEmpty.style.display = 'flex';  rewContent.style.display = 'none';
+    return;
+  }
+  refEmpty.style.display = 'none';  refContent.style.display = 'block';
+  rewEmpty.style.display = 'none';  rewContent.style.display = 'block';
+
+  const rangeText = 'Data range: ' + (loy.date_range || 'N/A');
+  document.getElementById('loyalty-range-ref').textContent = rangeText;
+  document.getElementById('loyalty-range-rew').textContent = rangeText;
+
+  // ── Referrals
+  const ref = loy.referrals || {};
+  document.getElementById('ref-total').textContent  = fmtNum(ref.total);
+  document.getElementById('ref-unique').textContent = fmtNum(ref.unique_customers);
+  document.getElementById('ref-avg').textContent    = (ref.avg_per_month || 0);
+
+  const refMonths = ref.by_month || [];
+  mkChart('refChart', 'bar', {
+    labels: refMonths.map(m => m.label),
+    datasets: [{ label: 'Referrals', data: refMonths.map(m => m.count),
+                 backgroundColor: '#1D9E75', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const refOffers = ref.offers || [];
+  const refMax = refOffers[0] ? refOffers[0][1] : 1;
+  document.getElementById('ref-offers').innerHTML = barList(refOffers, refMax, 'green');
+
+  // ── Rewards
+  const rew = loy.rewards || {};
+  document.getElementById('rew-total').textContent  = fmtNum(rew.total);
+  document.getElementById('rew-unique').textContent = fmtNum(rew.unique_customers);
+  const pts = rew.total_points || 0;
+  document.getElementById('rew-points').textContent = fmtCompact(pts);
+  document.getElementById('rew-avg').textContent    = fmtNum(rew.avg_points);
+
+  const rewMonths = rew.by_month || [];
+  mkChart('rewChart', 'bar', {
+    labels: rewMonths.map(m => m.label),
+    datasets: [{ label: 'Rewards', data: rewMonths.map(m => m.count),
+                 backgroundColor: '#378ADD', borderRadius: 4, barPercentage: 0.65 }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const rewPtsMonths = rew.points_by_month || [];
+  mkChart('rewPtsChart', 'line', {
+    labels: rewPtsMonths.map(m => m.label),
+    datasets: [{ label: 'Points', data: rewPtsMonths.map(m => m.points),
+                 borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,0.07)',
+                 tension: 0.35, pointRadius: 4, pointBackgroundColor: '#1D9E75', fill: true }]
+  }, {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { ...baseScale, ticks: { ...baseScale.ticks, maxRotation: 0, autoSkip: false } }, y: { ...baseScale } }
+  });
+
+  const rewOffers = rew.offers || [];
+  const rewMax = rewOffers[0] ? rewOffers[0][1] : 1;
+  document.getElementById('rew-offers').innerHTML = barList(rewOffers, rewMax, 'blue');
+
+  const recent = rew.recent || [];
+  document.getElementById('rew-recent').innerHTML = recent.length
+    ? recent.map(r => `
+        <div class="low-row">
+          <div class="low-meta">
+            <span class="low-name">${r.email || 'Unknown'}</span>
+            <span class="low-date">${r.date}</span>
+            <span class="low-badge" style="background:var(--blue-bg);color:var(--blue)">−${fmtNum(r.points)} pts</span>
+          </div>
+          <div class="low-content">${r.description}</div>
+        </div>`).join('')
+    : '<p style="color:var(--muted);font-size:13px">No redemptions.</p>';
+}
+
+loadData();
+</script>
+</body>
+</html>
